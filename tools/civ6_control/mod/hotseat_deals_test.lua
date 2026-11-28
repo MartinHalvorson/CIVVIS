@@ -285,6 +285,24 @@ pending[2][3] = nil
 turn = 25
 check("countered", board().outcomes[3].outcome, "countered")
 
+-- ★ The empty pending deal our own answer leaves behind (live trade-live-3
+-- and -4: `pending_from_us: true` after every ACCEPTED or REJECTED, no item):
+-- no outgoing deal on the board, and no outcome when it goes.
+local outcomesBefore = #board().outcomes
+pending[2] = { [4] = true }
+working.outgoing[2][4] = {}
+check("an empty pending deal we never sent is not listed", #board().outgoing, 0)
+check("nor kept as ours", trade.seat.mine[4], nil)
+pending[2][4] = nil
+turn = 26
+check("and leaves no outcome", #board().outcomes, outcomesBefore)
+-- One we did send, its working deal since emptied by another arm, stays ours.
+trade.seat.mine[4] = { id = 4444, first = 26, give = {}, get = {}, round = 1 }
+pending[2] = { [4] = true }
+check("our own, emptied, is still listed", #board().outgoing, 1)
+check("by its id", board().outgoing[1].id, 4444)
+pending[2][4] = nil
+
 -- Heard outside hotseat: nothing kept.
 CivvisControlConfig.Hotseat = false
 trade.seatHeard(1, 2, DealProposalAction.ACCEPTED)

@@ -14212,14 +14212,24 @@ CivvisTrade.seatBoard = function(player, pid, turn)
 				end, nil);
 				local give, get, id, count = {}, {}, nil, 0;
 				if out ~= nil then give, get, id, count = CivvisTrade.seatSides(out, pid); end
-				if mine == nil then
+				-- An EMPTY pending deal we never sent is the trace our own
+				-- answer leaves: right after an ACCEPTED or REJECTED the engine
+				-- reads a pending deal from us to them (every `deal_answer` of
+				-- trade-live-3 and -4: `pending_from_us: true`), with no item,
+				-- gone by our next turn. It is no proposal of ours: not on the
+				-- board, no outcome.
+				if mine == nil and count == 0 then
+					ours = nil;
+				elseif mine == nil then
 					mine = { id = id, first = turn, give = give, get = get, round = 1 };
 					seat.mine[other] = mine;
 					seat.heard[other] = nil;
 				end
-				board.outgoing[#board.outgoing + 1] = { to = other, to_kind = kind, id = mine.id,
-					proposed_turn = mine.first, pending_turns = turn - mine.first,
-					give = give, get = get, items = count, round = mine.round };
+				if ours == true then
+					board.outgoing[#board.outgoing + 1] = { to = other, to_kind = kind, id = mine.id,
+						proposed_turn = mine.first, pending_turns = turn - mine.first,
+						give = give, get = get, items = count, round = mine.round };
+				end
 			elseif ours == false and mine ~= nil then
 				seat.mine[other] = nil;
 				local heard = seat.heard[other];
@@ -14856,6 +14866,10 @@ CivvisTrade.standInHolds = function(turn)
 				from = other;
 			end
 		end
+		-- A deal opened by its notification (`StandInDealActivate`) is in
+		-- its restored session, no longer pending: held all the same.
+		local activated = CivvisTrade.standIn.activated;
+		if from == nil and activated ~= nil and activated.turn == turn then from = activated.from; end
 		hold = { turn = turn, at = now, from = from, released = from == nil };
 		st.hold = hold;
 		if from ~= nil then

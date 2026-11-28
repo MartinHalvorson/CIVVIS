@@ -398,13 +398,18 @@ check("the record says so", field(last("stand_in_deal_activate"), "activated"), 
 check("from the seat whose deal it is", field(last("stand_in_deal_activate"), "from"), "3")
 check("two diplomacy notifications seen", field(last("stand_in_deal_activate"), "notifications"), "2")
 check("the leader screens held off for the hold", sessionHolds[#sessionHolds], "3:true:6")
+-- Live trade-live-4 t32: the activation restored seat 3's session
+-- (DiplomacyManager.csv `Restoring Session`) and the deal read as no longer
+-- pending, so nothing held the turn. Held all the same.
+pending = {}
 clock = 500
 check("the turn is held over it", trade.holdsEndTurn(30), true)
 clock = 506.5
 check("released", trade.holdsEndTurn(30), false)
 local released = last("stand_in_deal_hold")
 check("the release says what INCOMING held", field(released, "incoming_items"), "0")
-check("and whether it is still pending", field(released, "pending_from_them"), "true")
+check("and whether it is still pending", field(released, "pending_from_them"), "false")
+pending = { [3] = { [0] = true } }
 check("the leader screens released", sessionHolds[#sessionHolds], "3:false:0")
 -- Once a game: the next deal is answered as before, not opened.
 reset()
