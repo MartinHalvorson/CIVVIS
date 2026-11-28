@@ -5962,6 +5962,7 @@ const STRANGE_PANE_STYLE = `
 
 // The host's record of the highway, beside the split's own.
 const strange = {
+  paintFrame: 0,
   // The timeline being followed: the one in the middle.
   follow: "a",
   // The turn on the line across the window, which follows the followed
@@ -6853,6 +6854,32 @@ function strangeShow() {
     debugSplitTell(letter, ahead > 0 ? {civvis: "pane-show", ahead} : {civvis: "pane-show"});
   }
 }
+// Every turn is on the screen for at least one frame (operator 2026-11-27:
+// "doc strange should show 1 frame from every turn at least"). A world draws
+// the turn it is shown at once (`render`), but a world whose next turn it
+// already holds can be shown that in the same frame, and a turn drawn and
+// drawn over before the browser paints is never seen. So once every world
+// has drawn a turn, the next is asked for at once but shown only after a
+// frame has been painted: the frame asked for here is painted with every
+// world's turn on it, and the next turn is shown in a task after it, so not
+// even its count is painted early. A window nobody sees paints nothing and
+// waits for nothing.
+function strangeAwaitPaint(run) {
+  if (document.hidden) return;
+  run.painted = false;
+  const frame = ++strange.paintFrame;
+  const painted = () => {
+    if (strange.paintFrame !== frame || run.painted) return;
+    run.painted = true;
+    if (strange.run === run) strangeStep();
+  };
+  requestAnimationFrame(() => setTimeout(painted, 0));
+  // rAF stops for a window hidden meanwhile.
+  setTimeout(painted, 250);
+}
+function strangePainted(run) {
+  return run.painted !== false || document.hidden;
+}
 // The turn on the screen. While time runs, it is the one the worlds were
 // last told to show (`strangeStep`), and the label says it in the same
 // breath, so it changes with the maps: read off the followed world, it
@@ -6962,7 +6989,7 @@ function strangeStep() {
   };
   const letters = run.letters.filter(letter => strange.order.includes(letter) && split.panes[letter] && !strangeEnded(letter, run.asked));
   if (letters.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
-  if (!run.shown && letters.every(ready)) {
+  if (!run.shown && letters.every(ready) && strangePainted(run)) {
     run.shown = true;
     run.showing = run.asked;
     strangeShow();
@@ -6971,9 +6998,11 @@ function strangeStep() {
   const there = letter => split.panes[letter].turn === run.asked;
   if (letters.every(there)) {
     // Time runs as fast as the worlds are played and drawn: a turn is on
-    // the screen for as long as the next takes, and no longer.
+    // the screen for as long as the next takes, and no longer, but for at
+    // least one frame (`strangePainted`). The next is asked for at once.
     run.at = run.asked;
     run.asked = null;
+    strangeAwaitPaint(run);
     strangeAsk(run);
     return;
   }
