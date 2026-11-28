@@ -319,10 +319,10 @@ tree up the middle of the window and the two worlds under it
 (`docs/SIM_DEBUGGER.md`). It opens on four civilizations on a flat Pangaea
 (operator, 2026-11-25: "lets use 4p pangaea maps for doctor strange's civ 6").
 
-`/moneyball` is CIVVIS: Moneyball, listed between Edge of Tomorrow and AI
-Debugger since 2026-11-27 (operator: "add CIVVIS: Moneyball. This is a
-minigame where a user only looks at the stats and tries to play the best
-game"): the seat is played by the player strategy the person picks off a
+`/moneyball` is CIVVIS: Moneyball, since 2026-11-27 (operator: "add
+CIVVIS: Moneyball. This is a minigame where a user only looks at the stats
+and tries to play the best game"), listed right below Charts/ since
+2026-11-28 ("please place moneyball right below charts"): the seat is played by the player strategy the person picks off a
 board of their futures, a stretch of turns at a time, on Doctor Strange's
 four-civilization Pangaea (`docs/SIM_DEBUGGER.md`, "CIVVIS: Moneyball").
 
