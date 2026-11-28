@@ -13926,9 +13926,11 @@ CivvisTrade.seatBoard = function(player, pid, turn)
 		-- (DLC/CivRoyaleScenario/UI/Replacements/NotificationPanel_CivRoyaleScenario.lua:33-36,
 		-- `NotificationManager.GetList(playerID)` then `Find` by id), and the one
 		-- type asked directly (`FindType`, Base/Assets/UI/ActionPanel.lua:454).
-		probe.diplomacy_session = try(function()
-			return NotificationManager.FindType(NotificationTypes.DIPLOMACY_SESSION, pid) ~= nil;
-		end, nil);
+		if NotificationTypes ~= nil then
+			probe.diplomacy_session = try(function()
+				return NotificationManager.FindType(NotificationTypes.DIPLOMACY_SESSION, pid) ~= nil;
+			end, nil);
+		end
 		local diplo, total = {}, 0;
 		CivvisK.guard(function()
 			for _, id in pairs(NotificationManager.GetList(pid) or {}) do
