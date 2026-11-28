@@ -9249,7 +9249,14 @@ const TOMORROW_STYLE = `
      report buttons, the map and the left panel stay, and the seat is moved
      only by Auto-play (\`civvisSeatHandsOff\`). */
   html.tomorrow #ubar, html.tomorrow #actionpanel, html.tomorrow #worldtracker,
-  html.tomorrow #notify .notice.tone-action { display: none !important; }
+  html.tomorrow #notify .notice.tone-action, html.tomorrow #civtop { display: none !important; }
+  /* Operator 2026-11-27: "from edge of tomorrow we can remove the old yield
+     hud with science, culture, etc." Civ 6's yield strip (\`#civtop\`, in
+     the rule above) is gone, and so is the room the screen keeps for it: the
+     standings take the top of the window, and the launch bar, the hooks and
+     the tracker stand under them, by the screen's own rules, which all count
+     the strip's height. */
+  html.tomorrow body.civ6-frame #maparea { --civtop-height: 0px; }
   /* Operator 2026-11-26: "civvis: edge of tomortrow should not have the
      world minimap or <...(spin)x thing showing". The minimap and the map's
      controls (deck, compass, zoom, spin, close) are put away, and the map is
@@ -9264,53 +9271,19 @@ const TOMORROW_STYLE = `
      box stands as it does in the Debugger view (\`civvisSeatTracker\`),
      without the live mirror's Pause and New game. */
   html.tomorrow .livepause-buttons, html.tomorrow #livepause-note { display: none !important; }
-  /* Operator 2026-11-26: "move the menu with quick deals and other stuff
-     inside, to the left of the victory tracker". While the Rankings are
-     open, Civ 6's upper-right hooks (Rankings, Diplomacy, Reports, Era,
-     Trade routes, City-States, Espionage) stand in a column down the
-     tracker's left side, and the tracker climbs into the band they took
-     under the standings. The notifications step inboard of the column. A
-     map area narrow enough to stack the Rankings into one band keeps the
-     hooks where they were. */
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar {
-    top: var(--solo-bar-top); right: calc(var(--panel-edge) + var(--victory-hud-width) + var(--panel-gap));
-    max-width: none; max-height: calc(100% - var(--solo-bar-top) - var(--panel-edge));
-    flex-direction: column; overflow: hidden auto;
-  }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooktabs { flex-direction: column; }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar .launch-rule {
-    width: 26px; height: 1px; margin: 3px 0; background: linear-gradient(90deg, transparent, #77978b, transparent);
-  }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #victoryhud { top: var(--solo-bar-top); }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #notify {
-    right: calc(var(--panel-edge) + var(--victory-hud-width) + 2 * var(--panel-gap) + 62px);
-  }
+  /* The hooks (Rankings, Diplomacy, Reports, Era, Trade routes, City-States,
+     Espionage) stand as on every Civilization VI screen: a row in the upper
+     right, in their own order, under the standings (operator 2026-11-27:
+     "the bar with espioage should be in the normal order and horizontal").
+     They stood in a column beside the tracker from 2026-11-26 ("move the
+     menu with quick deals and other stuff inside, to the left of the victory
+     tracker"). */
   /* The standings open short here (\`measureTurnPlateNeed\`, below), so the
      turn box is shorter than what it lists. Its rows down to the turn count
      keep their own height rather than giving way (the age, which hides its
      overflow, would fold to nothing and the turn's numeral ride up over it),
      and the box's own edge covers the rest. */
   html.tomorrow #playerhud .victory-turn > :not(.turn-settings) { min-height: min-content; }
-  /* Operator 2026-11-26: "on civvis edge of tomorrow the top bar with
-     science, cul yields, etc should move below the player hud". The
-     standings take the top of the window and Civ 6's yield strip
-     (\`#civtop\`) runs across under them; the launch bar, the hooks and the
-     tracker still begin under both (\`--solo-bar-top\` counts the strip
-     after the standings rather than before them). With the standings folded
-     away the strip is at the top again. */
-  html.tomorrow body.civ6-frame #maparea {
-    --tmr-civtop-top: 0px;
-    --solo-bar-top: calc(var(--tmr-civtop-top) + var(--civtop-height) + var(--panel-gap));
-  }
-  html.tomorrow body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea {
-    --tmr-civtop-top: calc(var(--panel-gap) + var(--solo-masthead));
-  }
-  html.tomorrow body.civ6-frame #civtop { top: var(--tmr-civtop-top); }
-  html.tomorrow body.civ6-frame.rankings-open #playerhud,
-  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud { top: var(--panel-gap); }
-  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {
-    top: calc(2 * var(--panel-gap) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)));
-  }
 `;
 
 const tomorrow = {
