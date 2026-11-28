@@ -10797,6 +10797,13 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `spreaders-spread-before-they-chart-2`: version one, and the corps'
+    /// searchers share one budget: the last-charge scouts already walking
+    /// the fog count against the seekers' and the scouts' quotas, the surplus
+    /// clause counts every searcher already out, and the seekers are the
+    /// spreaders with the fewest charges. See
+    /// `advanced/spreaders_spread_before_they_chart.rs`. Off by default.
+    spreaders_spread_before_they_chart_2: bool,
     /// `settler-walk-clock-runs-all-game`: the Settler walk clock that
     /// `settler-walk-deadline` and `stalled-settler-takes-a-safe-site` read
     /// ticks on every turn the Settler is stepped (retreats, flights and

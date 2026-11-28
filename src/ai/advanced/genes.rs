@@ -6686,6 +6686,15 @@ pub const GENES: &[Gene] = &[
     // seat from its third city; science heads keep their queue. Opt-in; see
     // `advanced/culture_monuments.rs`.
     Gene { tag: "science-seat-monuments", field: "science_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_monuments, disable: AdvancedAi::disable_science_seat_monuments },
+    // Version one armed, the reviewer still named "spreaders scout instead of
+    // spreading" in 35 of 40 Lv 8 tourney games (2026-11-27). Three searches
+    // each took their own share of the corps: in t8-20261127T064630Z at t90
+    // three last-charge Missionaries scouted, the two seekers were the
+    // corps' full spreaders (farthest from home) and none of seven spread
+    // with five known rival cities owed. The searchers share one budget and
+    // the seekers are the most spent spreaders. Opt-in; see
+    // `advanced/spreaders_spread_before_they_chart.rs`.
+    Gene { tag: "spreaders-spread-before-they-chart-2", field: "spreaders_spread_before_they_chart_2", kind: Kind::OptIn, enable: AdvancedAi::enable_spreaders_spread_before_they_chart_2, disable: AdvancedAi::disable_spreaders_spread_before_they_chart_2 },
     // Live Tournament 7 (4 of 40 reviewed games, 2026-11-27): Settlers
     // walked 20 to 112 turns without founding while the two armed walk
     // limits never fired. The walk clock ticked only on turns that reached

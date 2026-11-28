@@ -730,6 +730,10 @@ impl AdvancedAi {
         /// claim their Monument from the third city; see
         /// `advanced/culture_monuments.rs`.
         science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
+        /// Opt-in gene `spreaders-spread-before-they-chart-2`: version one,
+        /// and the corps' searchers share one budget; see
+        /// `advanced/spreaders_spread_before_they_chart.rs`.
+        spreaders_spread_before_they_chart_2 => enable_spreaders_spread_before_they_chart_2, disable_spreaders_spread_before_they_chart_2;
         /// Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.
