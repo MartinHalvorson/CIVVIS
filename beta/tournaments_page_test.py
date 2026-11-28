@@ -361,9 +361,13 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual([(t["id"], t["description"], t["games"], t["size"]) for t in during["running"]],
                          [(7, "100 Lv 8 Deity games, no Diplo allowed", 1, 100)])
         self.assertEqual(during["benchmark"]["games"], 1)
-        # The page draws it in the right-hand column, under Scheduled.
-        side = PAGE[PAGE.index('<div class="tour-side">'):PAGE.index('<p class="tour-legend">')]
-        self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-benchmark"'))
+        # The page draws it in the left-hand column, under ELO Rankings
+        # (operator 2026-11-27: "in tournaments, move elo rankings to left
+        # side at the top. lets put the tournament on the rigth. scheudel can
+        # stay top right. benchmark left."); it stood under Scheduled on the
+        # right before.
+        main = PAGE[PAGE.index('<div class="tour-main">'):PAGE.index('<div class="tour-side">')]
+        self.assertLess(main.index('id="tour-elo"'), main.index('id="tour-benchmark"'))
         for piece in (
             '<section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">',
             '<h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>',
@@ -443,12 +447,21 @@ class TournamentsPage(unittest.TestCase):
         # diplomacy, domination, score) , 2P Pangaea (religion off, religion
         # on). we can elo for each, sortable by score". It stood on the right
         # over the benchmark from earlier that day ("list Diplo off first (and
-        # default for sorting)"): now it is the record's first child, before
-        # both columns, so it spans the page.
+        # default for sorting)"), then across the top of the page; since the
+        # same evening ("in tournaments, move elo rankings to left side at
+        # the top. lets put the tournament on the rigth. scheudel can stay
+        # top right. benchmark left.") it is the first thing in the left
+        # column, over the benchmark, and the right column is Scheduled over
+        # the tournaments running and finished.
         record = PAGE[PAGE.index('<div class="tour-record" id="tour-record" hidden>'):PAGE.index('<p class="tour-legend">')]
-        self.assertLess(record.index('id="tour-elo"'), record.index('<div class="tour-main">'))
-        self.assertNotIn('id="tour-elo"', record[record.index('<div class="tour-side">'):])
-        self.assertIn(".tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }", PAGE)
+        main = record[record.index('<div class="tour-main">'):record.index('<div class="tour-side">')]
+        side = record[record.index('<div class="tour-side">'):]
+        self.assertEqual([main.index(f'id="tour-{name}"') for name in ("elo", "benchmark")], sorted(main.index(f'id="tour-{name}"') for name in ("elo", "benchmark")))
+        self.assertLess(main.index('<section'), main.index('id="tour-elo"') + 1)
+        order = [side.index(f'id="tour-{name}"') for name in ("scheduled", "running", "finished")]
+        self.assertEqual(order, sorted(order))
+        for name in ("running", "finished", "scheduled"):
+            self.assertNotIn(f'id="tour-{name}"', main)
         self.assertIn('>ELO Rankings</a></h2>', record)
         # A column for each setup, in the operator's order, under its game;
         # Diplo off first and pressed, the order it opens in.
@@ -886,10 +899,11 @@ class TournamentsPage(unittest.TestCase):
             "Dates are UTC, on the 24-hour clock.",
             "Wall time is from a tournament&#8217;s first game starting to its last game ending.",
             "Run time is the time its games were in play, added up, without the time between them.",
-            # The tournaments are the left 60%, and what is scheduled and
-            # the benchmark the right 40% (operator 2026-11-25: "put the
-            # experiments list on the left 60%. the scheduled games &
-            # benchmark can be on the right"); narrower, one column.
+            # Two columns, the left 60% and the right 40% (operator
+            # 2026-11-25: "put the experiments list on the left 60%. the
+            # scheduled games & benchmark can be on the right"; 2026-11-27:
+            # "move elo rankings to left side at the top. lets put the
+            # tournament on the rigth"); narrower, one column.
             "  @media (min-width: 1100px) {\n"
             "    .tour-record { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }\n"
             "    .tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }\n"
@@ -1038,12 +1052,13 @@ class Drawn(unittest.TestCase):
           return {hidden: card.hidden, left: rows('control'), right: rows('self'), lefts: tops('control'), rights: tops('self'),
             heads: ['control', 'self'].map(name => Math.round(side(name).querySelector('thead').getBoundingClientRect().height)),
             kinds, pressed: [...card.querySelectorAll('.rank-sort')].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.sort),
-            top: [elo.bottom <= box('tour-running').top || box('tour-running').height === 0, elo.bottom <= box('tour-scheduled').top, Math.abs(elo.width - record.width) <= 2],
+            top: [Math.abs(elo.top - box('tour-scheduled').top) <= 1, elo.left === record.left && elo.right < box('tour-scheduled').left,
+              elo.bottom <= box('tour-benchmark').top || box('tour-benchmark').height === 0, box('tour-scheduled').bottom <= box('tour-running').top || box('tour-running').height === 0],
             note: card.querySelector('[data-rank-note]').textContent}; })()"""
         names = lambda drawn: [row[1] for row in drawn["left"]]
         drawn = self.dev.evaluate(read)
         self.assertFalse(drawn["hidden"])
-        self.assertEqual(drawn["top"], [True, True, True])
+        self.assertEqual(drawn["top"], [True, True, True, True])
         # It opens on the one-scale ranking by Diplo off, both Diplo off
         # heads pressed: every row numbered, wherever its figure was measured.
         self.assertEqual(drawn["pressed"], ["control:continents6_no_diplo", "self:continents6_no_diplo"])
