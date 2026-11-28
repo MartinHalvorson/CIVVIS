@@ -21,6 +21,11 @@ def line(event: dict) -> str:
     return PREFIX + json.dumps(event) + "\n"
 
 
+def unstamped(event: dict) -> dict:
+    """A relayed record as the game wrote it, without the relay's receipt stamp."""
+    return {key: value for key, value in event.items() if key != watch.RELAY_STAMP}
+
+
 class EventLogBridgeTest(unittest.TestCase):
     def test_backfills_only_the_requested_run_and_preserves_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -44,7 +49,8 @@ class EventLogBridgeTest(unittest.TestCase):
 
             events = [json.loads(row) for row in
                       (run / "events.jsonl").read_text().splitlines()]
-            self.assertEqual(events, [existing, repeated, repeated])
+            self.assertEqual([unstamped(event) for event in events],
+                             [existing, repeated, repeated])
 
     def test_keeps_a_partial_log_line_until_it_is_complete(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -60,10 +66,150 @@ class EventLogBridgeTest(unittest.TestCase):
                 output.write(payload[20:] + "\n")
             self.assertEqual(bridge.pump(), 1)
             self.assertEqual(
-                [json.loads(row) for row in
+                [unstamped(json.loads(row)) for row in
                  (root / "run" / "events.jsonl").read_text().splitlines()],
                 [event],
             )
+
+
+class ReceiptStampTest(unittest.TestCase):
+    """Every copied record says when it reached the relay (`RELAY_STAMP`)."""
+
+    def _bridge(self, root: Path, *stamps):
+        from datetime import datetime, timezone
+        times = iter(datetime(2026, 11, 28, 3, 38, 29, ms * 1000, tzinfo=timezone.utc)
+                     for ms in stamps)
+        log = root / "Automation.log"
+        log.touch()
+        return EventLogBridge(root / "run", tag="live", log_path=log,
+                              clock=lambda: next(times)), log
+
+    def _relayed(self, root: Path) -> list[dict]:
+        return [json.loads(row) for row in
+                (root / "run" / "events.jsonl").read_text().splitlines()]
+
+    def test_each_pump_stamps_what_it_found_with_its_own_time(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bridge, log = self._bridge(root, 44, 592)
+            with log.open("a") as output:
+                output.write(line({"kind": "state", "run": "live", "turn": 12})
+                             + line({"kind": "await", "run": "live", "polls": 1}))
+            self.assertEqual(bridge.pump(), 2)
+            self.assertEqual(bridge.pump(), 0, "nothing new: no stamp is taken")
+            with log.open("a") as output:
+                output.write(line({"kind": "orders", "run": "live", "turn": 12}))
+            self.assertEqual(bridge.pump(), 1)
+            self.assertEqual([(e["kind"], e[watch.RELAY_STAMP]) for e in self._relayed(root)],
+                             [("state", "2026-11-28T03:38:29.044Z"),
+                              ("await", "2026-11-28T03:38:29.044Z"),
+                              ("orders", "2026-11-28T03:38:29.592Z")])
+
+    def test_a_restarted_bridge_does_not_copy_its_predecessors_records_again(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bridge, log = self._bridge(root, 44)
+            with log.open("a") as output:
+                output.write(line({"kind": "state", "run": "live", "turn": 1})
+                             + line({"kind": "state", "run": "live", "turn": 1}))
+            self.assertEqual(bridge.pump(), 2)
+            again = EventLogBridge(root / "run", tag="live", log_path=log)
+            self.assertEqual(again.pump(), 0, "its stamped copies are the same records")
+            with log.open("a") as output:
+                output.write(line({"kind": "state", "run": "live", "turn": 1}))
+            self.assertEqual(again.pump(), 1, "a third identical record is new")
+            self.assertEqual(len(self._relayed(root)), 3)
+
+    def test_only_the_relays_own_stamp_is_ignored_when_matching(self) -> None:
+        # An `--attach-running` relay copies into a journal `civ6_play.record`
+        # wrote, whose lines carry its own `utc`; that matching is unchanged.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bridge, log = self._bridge(root, 44)
+            (root / "run" / "events.jsonl").write_text(
+                json.dumps({"kind": "seat", "run": "live", "utc": "x"}) + "\n")
+            bridge = EventLogBridge(root / "run", tag="live", log_path=log,
+                                    clock=bridge.clock)
+            with log.open("a") as output:
+                output.write(line({"kind": "seat", "run": "live"}))
+            self.assertEqual(bridge.pump(), 1)
+
+    def test_a_stamp_already_in_the_log_is_replaced_by_this_relays(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bridge, log = self._bridge(root, 44)
+            with log.open("a") as output:
+                output.write(line({"kind": "state", "run": "live",
+                                   watch.RELAY_STAMP: "2026-01-01T00:00:00.000Z"}))
+            self.assertEqual(bridge.pump(), 1)
+            self.assertEqual(self._relayed(root)[0][watch.RELAY_STAMP],
+                             "2026-11-28T03:38:29.044Z")
+
+
+class RelayForTest(unittest.TestCase):
+    """`relay_for` is a caller's sleep that relays every `read_s` meanwhile."""
+
+    class Clock:
+        def __init__(self):
+            self.now = 100.0
+            self.sleeps: list[float] = []
+
+        def __call__(self) -> float:
+            return self.now
+
+        def sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+            self.now += seconds
+
+    class Bridge:
+        def __init__(self, clock, arrivals=()):
+            self.clock, self.arrivals, self.pumped_at = clock, list(arrivals), []
+
+        def pump(self) -> int:
+            self.pumped_at.append(self.clock.now)
+            due = [at for at in self.arrivals if at <= self.clock.now]
+            self.arrivals = [at for at in self.arrivals if at > self.clock.now]
+            return len(due)
+
+    def test_every_bridge_is_pumped_every_read_s_for_the_whole_window(self) -> None:
+        clock = self.Clock()
+        bridges = [self.Bridge(clock), self.Bridge(clock)]
+        # 1/16 s, so the sums are exact in binary and the count is the count.
+        watch.relay_for(bridges, 0.5, 0.0625, clock=clock, sleep=clock.sleep)
+        self.assertEqual(clock.now, 100.5)
+        self.assertEqual(clock.sleeps, [0.0625] * 8)
+        for bridge in bridges:
+            self.assertEqual(bridge.pumped_at, [100 + 0.0625 * i for i in range(1, 9)])
+
+    def test_a_board_written_mid_window_is_copied_within_read_s(self) -> None:
+        clock = self.Clock()
+        bridge = self.Bridge(clock, arrivals=[100.031])
+        copied = watch.relay_for([bridge], 0.5, 0.02, clock=clock, sleep=clock.sleep)
+        self.assertEqual(copied, 1)
+        first = next(at for at in bridge.pumped_at if at >= 100.031)
+        self.assertLess(first - 100.031, 0.02 + 1e-9)
+
+    def test_the_window_ends_on_time_when_it_is_not_a_multiple_of_read_s(self) -> None:
+        clock = self.Clock()
+        watch.relay_for([self.Bridge(clock)], 0.05, 0.02, clock=clock, sleep=clock.sleep)
+        self.assertAlmostEqual(clock.now, 100.05)
+        self.assertAlmostEqual(clock.sleeps[-1], 0.01)
+
+    def test_without_a_positive_read_s_it_sleeps_once_and_pumps_once(self) -> None:
+        clock = self.Clock()
+        bridge = self.Bridge(clock)
+        watch.relay_for([bridge], 0.5, 0, clock=clock, sleep=clock.sleep)
+        self.assertEqual(clock.sleeps, [0.5])
+        self.assertEqual(bridge.pumped_at, [100.5])
+
+    def test_the_real_bridge_relays_through_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            log = root / "Automation.log"
+            log.write_text(line({"kind": "state", "run": "live", "turn": 3}))
+            bridge = EventLogBridge(root / "run", tag="live", log_path=log)
+            self.assertEqual(watch.relay_for([bridge], 0.03, 0.01), 1)
+            self.assertIn('"kind":"state"', (root / "run" / "events.jsonl").read_text())
 
 
 class HeldLastRecordTest(unittest.TestCase):

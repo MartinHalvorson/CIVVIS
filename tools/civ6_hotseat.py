@@ -45,10 +45,16 @@ removes the mod; closing Civ VI yourself ends the harness the same way.
 
 Saves and resuming. Civ VI autosaves, and the mod also saves ``<tag>-T<turn>``
 every ``--save-every`` turns (Saves/Hotseat). ``--resume`` starts Civ VI and
-loads the newest hotseat save or autosave (``--resume PATH`` for a particular
-one) through the Hot Seat page's Load Game, then plays on exactly like a new
-game. ``--attach`` picks up a hotseat game that is still running with the mod
-(after ``--stop`` or a closed terminal).
+loads the newest hotseat save, autosave or quicksave (``--resume PATH`` for a
+particular one) through the Hot Seat page's Load Game, then plays on exactly
+like a new game: the game the save is of, as the run that played it set it up
+(its ``table.json``, or for an older run its ``config.json``): your name and
+leader, the agent on each seat, the cover, the turn limit, when it began. A
+flag given again wins (``--agents``, ``--name``, the cover's), except that the
+table itself is the save's (players, map, speed, difficulty, your leader). A
+person's bare ``--resume`` passes over a newer save a test made. ``--attach``
+picks up a hotseat game that is still running with the mod (after ``--stop``
+or a closed terminal).
 
 A duel, under your name, for your Elo. ``--duel`` is one against one: two
 players on a Duel map, the other seat played by the strongest roster agent
@@ -1086,11 +1092,323 @@ HOTSEAT_SAVES = play.AUTOSAVE_DIR.parent.parent / "Hotseat"
 RESUME_STEM = "civvis-hotseat-resume"
 
 
+def hotseat_saves(directory: Path = HOTSEAT_SAVES) -> list[Path]:
+    """Every hotseat save, newest first: the mod's own (`<tag>-T<turn>`),
+    Civ VI's autosaves, and the person's quicksave (Saves/Hotseat/quick/,
+    which a person who presses Quick Save before quitting means to go on from:
+    the live 6-player game of 2026-11-28 made one at 21:44)."""
+    saves = []
+    for pattern in ("*.Civ6Save", "auto/*.Civ6Save", "quick/*.Civ6Save"):
+        for path in directory.glob(pattern):
+            try:
+                if path.is_file() and path.stem != RESUME_STEM:
+                    saves.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+    return [path for _, path in sorted(saves, key=lambda pair: pair[0], reverse=True)]
+
+
 def newest_save(directory: Path = HOTSEAT_SAVES) -> Path | None:
-    saves = [p for p in list(directory.glob("*.Civ6Save"))
-             + list(directory.glob("auto/*.Civ6Save"))
-             if p.is_file() and p.stem != RESUME_STEM]
-    return max(saves, key=lambda p: p.stat().st_mtime) if saves else None
+    saves = hotseat_saves(directory)
+    return saves[0] if saves else None
+
+
+#: In each run directory: the game as that run plays it, every setting below
+#: (`table_settings`). A later `--resume` of one of its saves reads it back.
+TABLE = "table.json"
+#: What a saved game is: the table, how it was set up, the person's leader.
+#: No flag changes a saved game, so these always come from the run that made
+#: the save (a differing flag is said and not used). The wrapper that starts a
+#: person's games passes `--players 2 --map-size MAPSIZE_DUEL` before every
+#: command, `--resume` too, so a flag here is not always a person's choice.
+SAVE_OWN = ("players", "map", "map_size", "speed", "difficulty", "leader", "victories_off")
+#: What the first run chose for the game: brought back unless asked again.
+CHOICES = ("name", "agents", "civvis_seats", "auto_human", "victory", "max_turns",
+           "save_every", "no_cover", "keep_handover", "cover_sound", "no_cover_timer",
+           "no_cover_queue", "play_flags")
+#: How far back a `--resume` looks for the run that made a save.
+RUNS_LOOKED_AT = 60
+#: A save is read this far for the names its seats carry (they stand in the
+#: first ~170 KB of a 6-player save).
+SAVE_HEAD_BYTES = 1 << 20
+#: A CIVVIS seat's name as a save holds it (`seat_name`); the mod's own name,
+#: "CIVVIS Control", is in every save too and is not a seat.
+SAVED_SEAT_NAME = re.compile(rb"CIVVIS (?:jack \d+|[A-Z][A-Za-z]+)")
+
+
+def settings_from_config(config: dict) -> dict:
+    """The game's settings from the mod's installed config (`config.json`), for
+    a run from before `table.json`. Only what the config holds is returned."""
+    players, civvis_seats = attached_table(config)
+    agents = config.get("HotseatSeatAgents") or {}
+    settings = {
+        "tag": config.get("RunTag"),
+        "players": players, "civvis_seats": civvis_seats,
+        "auto_human": (None if not config.get("HotseatStubSeats")
+                       else "gated" if config.get("HotseatHumanSeats") else "stub"),
+        "map": config.get("MapScript"), "map_size": config.get("MapSize"),
+        "speed": config.get("GameSpeed"),
+        "difficulty": config.get("PlayerDifficulty") or config.get("Difficulty"),
+        "leader": config.get("Leader") or None,
+        "victories_off": list(config.get("VictoriesOff") or []),
+        "name": config.get("HotseatPersonName") or None,
+        "agents": [agents[seat] for seat in sorted(agents, key=int)] or None,
+        "victory": config.get("VictoryLane"),
+        "max_turns": config.get("MaxTurns"),
+        "save_every": config.get("HotseatSaveEvery"),
+        "no_cover": not config.get("HotseatCover"),
+        "keep_handover": not config.get("HotseatAutoStart"),
+        "cover_sound": config.get("HotseatCoverSound"),
+        "no_cover_timer": not config.get("HotseatCoverTimer"),
+        "no_cover_queue": not config.get("HotseatCoverQueue"),
+        "started": config.get("HotseatStarted") or None,
+        "names": dict(config.get("HotseatNames") or {}),
+    }
+    # A value the config did not carry is not a setting; `None` is one only
+    # where it means something (a random leader, no name, jack everywhere).
+    meaningful = {"leader", "name", "agents", "civvis_seats", "auto_human", "started"}
+    return {key: value for key, value in settings.items()
+            if value is not None or key in meaningful}
+
+
+def table_settings(args: argparse.Namespace, began: dict, resumed: dict | None = None) -> dict:
+    """What `TABLE` keeps: every setting a resumed game takes back, the seats'
+    names in the game (how a save is told to be this run's), and when the
+    game began."""
+    settings = {key: getattr(args, key, None) for key in SAVE_OWN + CHOICES}
+    seats = jack_seats(args.players, getattr(args, "civvis_seats", None))
+    settings.update({
+        "tag": args.tag, "started": began.get("started"),
+        "names": {str(seat): seat_name(i, getattr(args, "agents", None) and agent)
+                  for i, (seat, agent) in enumerate(seat_agents(args, seats).items(), 1)},
+    })
+    if args.auto_human:
+        settings["names"][str(HUMAN_SEAT)] = "Test stub"
+    if resumed:
+        settings["resumed_from"] = resumed.get("from")
+    return settings
+
+
+def run_settings(run_dir: Path) -> dict | None:
+    """A run's game: its `table.json`, or for an older run what its
+    `config.json` says. None when the run directory holds neither."""
+    try:
+        table = json.loads((run_dir / TABLE).read_text(encoding="utf-8"))
+        if isinstance(table, dict):
+            return table
+    except (OSError, ValueError):
+        pass
+    try:
+        config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(config, dict) or not config.get("Hotseat"):
+        return None
+    return settings_from_config(config)
+
+
+def save_head(save: Path) -> bytes:
+    try:
+        with save.open("rb") as handle:
+            return handle.read(SAVE_HEAD_BYTES)
+    except OSError:
+        return b""
+
+
+def save_seat_names(head: bytes) -> list[str]:
+    """The CIVVIS seats' names a save holds, in the order they stand there
+    (not seat order: the save keeps them in a table of its own)."""
+    seen: list[str] = []
+    for found in SAVED_SEAT_NAME.findall(head):
+        name = found.decode("ascii", "replace")
+        if name != "CIVVIS Control" and name not in seen:
+            seen.append(name)
+    return seen
+
+
+def save_is_of(head: bytes, settings: dict) -> bool:
+    """Whether a save is this run's game: every name the run gave a seat, the
+    person's included, is in it. A run that names no seat cannot be told."""
+    names = [str(name) for name in (settings.get("names") or {}).values() if name]
+    if settings.get("name"):
+        names.append(str(settings["name"]))
+    return bool(names) and all(name.encode("utf-8") in head for name in names)
+
+
+#: A save the mod made: `<tag>-T<turn>` (`HotseatSaveName`, `HotseatSaveEvery`).
+MOD_SAVE = re.compile(r"^(?P<tag>.+)-T\d{3,}$")
+
+
+def save_run(save: Path, root: Path | None = None) -> Path | None:
+    """The run that played the game a save is of.
+
+    A save the mod made carries its run's tag. An autosave or a quicksave
+    carries none, so it is the newest run that had started when the save was
+    written and whose seat names the save holds: one game runs on a Mac at a
+    time (`gamelock`), and a run whose game never got going names seats no
+    save of it holds."""
+    root = RUN_ROOT if root is None else root
+    tagged = MOD_SAVE.match(save.stem)
+    if tagged and run_settings(root / tagged["tag"]) is not None:
+        return root / tagged["tag"]
+    try:
+        written = save.stat().st_mtime
+    except OSError:
+        return None
+    runs = []
+    for config in root.glob("*/config.json"):
+        try:
+            began = config.stat().st_mtime
+        except OSError:
+            continue
+        if began <= written + 5:
+            runs.append((began, config.parent))
+    head = save_head(save)
+    for _, run_dir in sorted(runs, key=lambda pair: pair[0], reverse=True)[:RUNS_LOOKED_AT]:
+        settings = run_settings(run_dir)
+        if settings is not None and save_is_of(head, settings):
+            return run_dir
+    return None
+
+
+def persons_game(settings: dict | None) -> bool:
+    """A run a person played (not a test stub's, not an unattended table)."""
+    return bool(settings) and not settings.get("civvis_seats") and not settings.get("auto_human")
+
+
+def resume_save(requested: str, person: bool, directory: Path | None = None,
+                root: Path | None = None) -> tuple[Path | None, list[Path]]:
+    """The save `--resume` loads, and the newer saves passed over for it.
+
+    `--resume PATH` is that save. A bare `--resume` is the newest, except that
+    a person's command passes over a save a test or an unattended table made
+    (other sessions on this Mac rehearse hotseat games between a person's):
+    it goes on from that person's newest game instead."""
+    if requested != "latest":
+        return Path(requested).expanduser(), []
+    saves = hotseat_saves(HOTSEAT_SAVES if directory is None else directory)
+    if not person:
+        return (saves[0] if saves else None), []
+    passed = []
+    for save in saves[:RUNS_LOOKED_AT]:
+        run_dir = save_run(save, root)
+        settings = run_settings(run_dir) if run_dir else None
+        if settings is None or persons_game(settings):
+            return save, passed
+        passed.append(save)
+    return (saves[0] if saves else None), []
+
+
+def flag(key: str) -> str:
+    return "--" + key.replace("_", "-")
+
+
+def shown(key: str, value) -> str:
+    if isinstance(value, list):
+        return ",".join(str(v) for v in value) or "none"
+    return str(value)
+
+
+def restore_resumed(args: argparse.Namespace, typed: set[str], save: Path,
+                    root: Path | None = None) -> tuple[list[str], bool]:
+    """Give `args` the game the save is of, from the run that played it.
+
+    The save's own settings (`SAVE_OWN`) always; the first run's choices
+    (`CHOICES`) wherever the command did not ask again (`typed`). Returns what
+    to say, and whether the resume can go ahead."""
+    run_dir = save_run(save, root)
+    settings = run_settings(run_dir) if run_dir is not None else None
+    if settings is None:
+        return gone_record(args, typed, save, root)
+    said = []
+    unused = []
+    for key in SAVE_OWN:
+        if key not in settings:
+            continue
+        value = settings[key]
+        if key in typed and normalised(key, getattr(args, key)) != value:
+            unused.append(f"{flag(key)} {shown(key, getattr(args, key))} "
+                          f"(the game has {shown(key, value)})")
+        setattr(args, key, raw(key, value))
+    asked = []
+    for key in CHOICES:
+        if key not in settings:
+            continue
+        if key in typed:
+            if normalised(key, getattr(args, key)) != settings[key]:
+                asked.append(flag(key))
+            continue
+        setattr(args, key, raw(key, settings[key]))
+    # The save's table is the table: `--duel`'s two seats and Duel map are not
+    # this game's unless they already were.
+    if getattr(args, "duel", False) and (args.players, args.map_size) != (2, "MAPSIZE_DUEL"):
+        unused.append(f"--duel (the game has {args.players} players on {args.map_size})")
+    args.duel = False
+    args.resumed = {"from": run_dir.name, "started": settings.get("started"), "save": str(save)}
+    seats = jack_seats(int(args.players), args.civvis_seats)
+    agents = normalised("agents", args.agents) or []
+    table = ", ".join(f"seat {seat} {agents[i] if i < len(agents) else STRATEGY}"
+                      for i, seat in enumerate(seats))
+    if args.civvis_seats or args.auto_human:
+        who = "nobody's seat (" + ("a test stub" if args.auto_human else "CIVVIS on every seat") + ")"
+    elif args.name:
+        who = f"{args.name} as {args.leader or 'a random leader'}, recorded for the people's Elo"
+    else:
+        who = (f"you as {args.leader or 'a random leader'}; no name, so not recorded for the "
+               "people's Elo")
+    said.append(f"resuming {save.name}, the game of {run_dir.name}"
+                + (f" (begun {settings['started']})" if settings.get("started") else "")
+                + f". Restored: {args.players} players on {args.map} {args.map_size}, "
+                  f"{args.speed}, {args.difficulty}; {who}; {table}"
+                + (f"; as asked now: {', '.join(asked)}" if asked else ""))
+    if unused:
+        said.append("not used, the save decides them: " + "; ".join(unused))
+    return said, True
+
+
+def normalised(key: str, value):
+    """A flag's value as `table.json` keeps it (`--agents` and
+    `--victories-off` are comma lists on the command line)."""
+    if key == "agents" and isinstance(value, str):
+        return [part.strip().lower() for part in value.split(",") if part.strip()] or None
+    if key == "victories_off" and isinstance(value, str):
+        return [part.strip().upper() for part in value.split(",") if part.strip()]
+    if key == "leader" and isinstance(value, str) and value.lower() == play.RANDOM_LEADER:
+        return None
+    return value
+
+
+def raw(key: str, value):
+    """A kept value as the command line gives it, for `main` to read on."""
+    if key in ("agents", "victories_off") and isinstance(value, list):
+        return ",".join(value) or (None if key == "agents" else "")
+    return value
+
+
+def gone_record(args: argparse.Namespace, typed: set[str], save: Path,
+                root: Path | None) -> tuple[list[str], bool]:
+    """A save no run on this Mac recorded (its run directory was removed, or
+    the save came from elsewhere): played as the command says, when the
+    command's table fits the save; otherwise stopped, saying what to type."""
+    args.resumed = {"from": None, "started": None, "save": str(save)}
+    names = save_seat_names(save_head(save))
+    players = 2 if args.duel else args.players
+    seats = len(jack_seats(players, players if args.self_play else args.civvis_seats))
+    where = RUN_ROOT if root is None else root
+    if names and len(names) != seats:
+        guess = [next((agent for agent, handle in AGENT_HANDLES.items()
+                       if name == f"CIVVIS {handle}"), STRATEGY) for name in names]
+        return [f"⚠ no run in {where} recorded the game in {save.name}, so who plays which "
+                f"seat is not known, and the save has {len(names)} CIVVIS seats "
+                f"({', '.join(names)}) where this command plays {seats}. Resume it with its "
+                "table spelled out, seat 1 first, in the order you set it up, e.g.:\n"
+                f"    civ6-hotseat.sh --resume {shlex.quote(str(save))} --players {len(names) + 1} "
+                f"--agents {','.join(guess)} --name YOU"], False
+    agents = getattr(args, "agents", None) or (STRONGEST if args.duel else STRATEGY)
+    return [f"⚠ no run in {where} recorded the game in {save.name}: it is played as this "
+            f"command says ({players} players, agents {shown('agents', agents)}"
+            + (f", name {args.name}" if args.name else
+               "; no --name, so it is not recorded for the people's Elo") + ")"], True
 
 
 def stage_save(save: Path, directory: Path = HOTSEAT_SAVES) -> Path:
@@ -1208,6 +1526,36 @@ class Journal:
             if isinstance(event, dict):
                 out.append(event)
         return out
+
+
+#: The hotseat loops' upkeep pass (the harness beat, the event monitor, the
+#: workers kept alive, the stall and liveness checks), and how often the
+#: game's log is relayed to the decision workers in between (`relay_for`).
+PASS_S = 0.5
+RELAY_S = 0.02
+
+
+def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
+              clock=None, sleep=None) -> None:
+    """Relay the game's log to the workers every `read_s` for `seconds`.
+
+    A decider reads its board from its seat's events.jsonl (`civvis_orders
+    --mirror`), which only these bridges write. Relayed once per half-second
+    pass, every board waited for the next pass: in the live six-player game
+    (hotseat-20261128T031456Z, turns 1-15, the seats' brain.log stamps) one
+    frame's answer to the next was 523 ms median (45 of 47 within 471-579 ms,
+    one pass), and one seat's last answer to the next seat's first 1057 ms
+    median (two passes), where the decider answers in 10 ms. The ladder relays
+    every 50 ms between its passes for the same reason (`civ6_play.py`,
+    `read_s`). Only the relay runs this often; everything else keeps the pass.
+    (The same loop as `watch.relay_for` in #6003, which this can call once
+    that is merged.)"""
+    clock, sleep = clock or time.monotonic, sleep or time.sleep
+    until = clock() + seconds
+    while (left := until - clock()) > 0:
+        sleep(min(read_s, left))
+        for bridge in bridges:
+            bridge.pump()
 
 
 #: `quit_civ`'s clock: the whole attempt, the seconds a question that is up
@@ -2321,7 +2669,7 @@ def run_manual(args: argparse.Namespace) -> int:
                 break
             if brains is not None and monitor.stalled(args.stall_seconds):
                 manual_stall_note(monitor, log, now)
-            time.sleep(0.5)
+            relay_for(bridges)
     except Stop as stop:
         if stop_reason == "finished":
             stop_reason = f"stopped ({stop})"
@@ -2365,6 +2713,20 @@ def run_manual(args: argparse.Namespace) -> int:
             CURRENT.unlink(missing_ok=True)
         log(f"done ({stop_reason}); record in {run_dir}")
     return 0
+
+
+#: An option's value while `typed_options` reads which ones the command gave.
+_UNTYPED = object()
+
+
+def typed_options(parser: argparse.ArgumentParser, argv: list[str] | None) -> set[str]:
+    """The options the command line gave, by destination. argparse fills a
+    default in only where the namespace has no value yet, so a namespace
+    holding a marker for every option keeps the marker wherever none was given."""
+    blank = argparse.Namespace(**{action.dest: _UNTYPED for action in parser._actions
+                                  if action.dest != argparse.SUPPRESS})
+    parsed = parser.parse_args(argv, namespace=blank)
+    return {dest for dest, value in vars(parsed).items() if value is not _UNTYPED}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2422,7 +2784,9 @@ def main(argv: list[str] | None = None) -> int:
                          "their shipped queueing (they wait until the cover stands aside)")
     ap.add_argument("--resume", nargs="?", const="latest", default=None, metavar="SAVE",
                     help="start Civ VI and load a hotseat save instead of a new game: "
-                         "a .Civ6Save path, or the newest hotseat save/autosave")
+                         "a .Civ6Save path, or the newest hotseat save/autosave/quicksave; "
+                         "the game is played as its first run set it up (name, agents, "
+                         "cover...), any of those given again wins")
     ap.add_argument("--attach", action="store_true",
                     help="drive a hotseat game that is already running (a resumed save, "
                          "or after --stop or a closed terminal)")
@@ -2512,6 +2876,27 @@ def main(argv: list[str] | None = None) -> int:
                   f"{current.get('tag')}); `--stop` it first", file=sys.stderr)
             return 6
         return run_manual(args)
+    # `--resume`: the save's game, as the run that played it set it up (a
+    # resumed run is a fresh harness: before 2026-11-28 a bare `--resume` of
+    # the person's six-player game would have played it as a duel of jack
+    # seats, under no name, recorded nowhere).
+    args.resume_save, args.resumed, args.resume_notes = None, None, []
+    if args.resume is not None:
+        person = not (args.auto_human or args.self_play or args.civvis_seats)
+        save, passed = resume_save(args.resume, person)
+        if save is None or not save.is_file():
+            print(f"no hotseat save to resume ({args.resume}); saves live in {HOTSEAT_SAVES}",
+                  file=sys.stderr)
+            return 2
+        args.resume_notes += [f"passed over {newer.name}, a test's or an unattended table's "
+                              f"save (`--resume {shlex.quote(str(newer))}` loads it)"
+                              for newer in passed]
+        notes, go = restore_resumed(args, typed_options(ap, argv), save)
+        if not go:
+            print("\n".join(notes), file=sys.stderr)
+            return 2
+        args.resume_notes += notes
+        args.resume_save = save
     if args.leader and args.leader.lower() == play.RANDOM_LEADER:
         args.leader = None
     if args.max_turns is None:
@@ -2556,14 +2941,6 @@ def main(argv: list[str] | None = None) -> int:
         print("--name is a person's, and an unattended table has nobody at it: a game "
               "CIVVIS played must not stand on the people's record", file=sys.stderr)
         return 2
-    args.resume_save = None
-    if args.resume is not None:
-        save = newest_save() if args.resume == "latest" else Path(args.resume).expanduser()
-        if save is None or not save.is_file():
-            print(f"no hotseat save to resume ({args.resume}); saves live in {HOTSEAT_SAVES}",
-                  file=sys.stderr)
-            return 2
-        args.resume_save = save
     current = read_current()
     if current and harness_alive(current.get("pid", -1)):
         print(f"a hotseat harness is already running (pid {current['pid']}, "
@@ -2604,7 +2981,10 @@ def run(args: argparse.Namespace) -> int:
                            else "gated" if attach_config.get("HotseatHumanSeats") else "stub")
         args.victory = attach_config.get("VictoryLane") or args.victory
         args.name = attach_config.get("HotseatPersonName") or args.name
-        args.leader = attach_config.get("Leader") or None
+        # A resumed game's install names no leader (the save has them all),
+        # so the person's comes from the run's own record of its table.
+        kept = run_settings(RUN_ROOT / args.tag) or {}
+        args.leader = kept.get("leader") or attach_config.get("Leader") or None
         seat_agent_map = attach_config.get("HotseatSeatAgents") or {}
         args.agents = [seat_agent_map[k] for k in sorted(seat_agent_map, key=int)] or None
         args.victories_off = list(attach_config.get("VictoriesOff") or [])
@@ -2636,7 +3016,10 @@ def run(args: argparse.Namespace) -> int:
     launched = bool(args.attach) and launched_here(run_dir)
     # When the game began and at which revision: a re-attached harness keeps
     # the first one's answer (the installed config carries both).
-    began = {"started": (attach_config or {}).get("HotseatStarted") or utc(),
+    # A resumed game began when the run that started it did.
+    resumed = getattr(args, "resumed", None) or {}
+    began = {"started": ((attach_config or {}).get("HotseatStarted") or resumed.get("started")
+                         or utc()),
              "revision": ((attach_config or {}).get("HotseatRevision") if args.attach
                           else checkout_revision())}
     seats = jack_seats(args.players, getattr(args, "civvis_seats", None))
@@ -2664,18 +3047,25 @@ def run(args: argparse.Namespace) -> int:
             binary = run_dir / ORDERS_NAME
         log(f"jack seats {seats} play with {binary}")
         if not args.attach:
+            for note in getattr(args, "resume_notes", None) or []:
+                log(note)
+            installing = args
             if args.resume_save is not None:
-                args.leader = None
-            config = hotseat_config(args, run_dir, orders_db)
+                # The save names every seat's leader; a pinned one is "Invalid
+                # Option" in its staging room (measured: one row, NO HUMAN
+                # PLAYERS). The person's stays on the record.
+                installing = argparse.Namespace(**vars(args))
+                installing.leader = None
+            config = hotseat_config(installing, run_dir, orders_db)
             config.update({"HotseatStarted": began["started"],
                            "HotseatRevision": began["revision"] or ""})
             reset_orders_db(orders_db)
             target = modinstall.install(config)
             (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
+            (run_dir / TABLE).write_text(json.dumps(table_settings(args, began, resumed or None),
+                                                    indent=2, sort_keys=True))
             log(f"installed the control mod for hotseat at {target}")
             if args.resume_save is not None:
-                # The save names every seat's leader; a pinned one is "Invalid
-                # Option" in its staging room (measured: one row, NO HUMAN PLAYERS).
                 staged = stage_save(args.resume_save)
                 log(f"resuming {args.resume_save} (staged as {staged.name})")
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
@@ -2742,6 +3132,10 @@ def run(args: argparse.Namespace) -> int:
             "the game itself stays up.")
         waited_for_game = began_waiting = checked_start = time.monotonic()
         posted = False
+        # Whether Civ VI still runs, without a `ps` every pass: the relay reads
+        # nothing while one runs (~28 ms, and seconds on a loaded host). An
+        # exit is still confirmed by a real listing (`watch.GameLiveness`).
+        liveness = watch.GameLiveness()
         while True:
             for bridge in bridges:
                 bridge.pump()
@@ -2749,7 +3143,7 @@ def run(args: argparse.Namespace) -> int:
             brains.keep_alive()
             if os.name == "nt" and (run_dir / "stop.json").is_file():
                 raise Stop("stop requested")
-            if not env.game_pids():
+            if not liveness.alive():
                 stop_reason = "Civ VI closed"
                 log("Civ VI has closed")
                 break
@@ -2791,7 +3185,7 @@ def run(args: argparse.Namespace) -> int:
                 waited_for_game = time.monotonic()
             if monitor.stalled(args.stall_seconds):
                 rescue_popup(monitor, log)
-            time.sleep(0.5)
+            relay_for(bridges)
     except Stop as stop:
         stop_reason = f"stopped ({stop})"
         log(f"stopping: {stop}")
