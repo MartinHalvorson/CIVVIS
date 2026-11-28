@@ -124,6 +124,14 @@ class HotseatInstallTest(unittest.TestCase):
         replaced = {p.findtext("LuaContext") for p in
                     tree.findall("./InGameActions/ReplaceUIScript/Properties")}
         self.assertIn("PlayerChange", replaced)
+        # The scenarios' event popup is served in hotseat only (a single-player
+        # install's modinfo is the shipped one: below).
+        self.assertIn("EventPopup", replaced)
+        served = [p.findtext("LuaReplace") for p in tree.findall("./InGameActions/ReplaceUIScript/Properties")
+                  if p.findtext("LuaContext") == "EventPopup"]
+        self.assertEqual(served, ["CivvisControlAutoClose.lua"])
+        self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
+                         (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)
@@ -1621,6 +1629,85 @@ class UnattendedTableTest(unittest.TestCase):
             self.assertIn("seat 1 quiet for 45 s on its own turn", text)
             self.assertIn("the HUD ended seat 1's quiet turn (asked True, request 1)", text)
             self.assertIn("seat 0's hand-over pause stood 6 s with no Start Turn on screen", text)
+
+    def test_a_stuck_seat_a_seat_between_turns_and_the_stand_in_are_said(self) -> None:
+        # The records #6004 and #6007 added (CivvisControlHeartbeat.lua `CivvisSeatWatch`,
+        # CivvisControlAgent.lua `CivvisSeat.standInStep`), in the fields their Lua
+        # tests read (heartbeat_test.lua, stand_in_test.lua). Before 2026-11-28 they
+        # reached only events.jsonl.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            lines: list[str] = []
+            monitor = hotseat.Monitor(run_dir, "hs", [1, 2], game_args(players=3, auto_human="gated"),
+                                      lines.append)
+            self.addCleanup(monitor.close)
+            base = {"ctx": "heartbeat", "run": "hs"}
+            with (run_dir / "events.jsonl").open("a") as out:
+                for event in (
+                    {"kind": "seat_stuck", "turn": 5, "player": 0, "why": "stub_turn", "age": 30, "quiet": 0,
+                     "blocker": "ENDTURN_BLOCKING_UNITS", "ready": "UNIT_SCOUT", "locks": 1, "sent": False,
+                     "processing": False, "controller_ran": True, "forces": 0},
+                    {"kind": "seat_stuck_end_turn", "turn": 5, "player": 0, "why": "stub_turn", "asked": True,
+                     "how": "unready", "forces": 1},
+                    {"kind": "seat_stuck", "turn": 9, "player": 2, "why": "long_turn", "age": 180, "quiet": 12,
+                     "blocker": None, "sent": True, "processing": True, "controller_ran": False},
+                    {"kind": "seat_between", "turn": 9, "player": 1, "between": 60, "sent": True, "busy": False,
+                     "processing": True, "locks": 2},
+                ):
+                    out.write(json.dumps(dict(base, **event)) + "\n")
+            (run_dir / "hs-p0").mkdir()
+            with (run_dir / "hs-p0" / "events.jsonl").open("a") as out:
+                for event in (
+                    {"kind": "stand_in_stuck", "turn": 5, "seat": 0, "step": 1, "seconds": 4,
+                     "blocker": "ENDTURN_BLOCKING_UNITS", "answered": "held:0+cancelled:1", "forced": 1,
+                     "sent": False, "game_paused": False, "visible": ["HistoricMoments"],
+                     "held_locks": [{"id": "7", "ctx": "HistoricMoments", "turn": 5}],
+                     "refusing": [{"id": 196608, "kind": "UNIT_SCOUT", "activity": "operation", "moves": 3,
+                                   "max": 3, "why": "text:LOC_UNIT_BUSY_WITH_OPERATION"}]},
+                    {"kind": "stand_in_stuck", "turn": 5, "seat": 0, "step": 11, "seconds": 34,
+                     "blocker": "ENDTURN_BLOCKING_UNITS", "answered": "held:0+cancelled:0", "forced": 11},
+                    {"kind": "end_turn_wait", "turn": 5, "forced": 2},
+                    {"kind": "end_turn_wait", "turn": 6, "forced": 0},
+                    {"kind": "stand_in_stuck", "turn": 7, "seat": 0, "step": 1, "seconds": 4,
+                     "blocker": "NO_ENDTURN_BLOCKING", "answered": None, "forced": 1},
+                    {"kind": "turn", "turn": 7, "orders_applied": None, "orders_source": "none"},
+                ):
+                    out.write(json.dumps(dict(event, ctx="agent", run="hs-p0")) + "\n")
+            monitor.poll()
+            text = "\n".join(lines)
+            self.assertEqual(monitor.seat_stalls, 3, "two stuck reports and one between turns")
+            self.assertIn("⚠ turn 5: test stub (seat 0)'s turn has stood 30 s, past the 30 s a test stub's "
+                          "turn may take, its controller quiet 0 s; the game waits on a unit waiting for orders, "
+                          "first unit still waiting for orders UNIT_SCOUT, 1 event lock(s) held by a screen. "
+                          "The HUD ends it", text)
+            self.assertIn("look at the game for a screen waiting on a click", text)
+            self.assertIn("turn 5: the HUD unreadied its end of turn, which the game had dropped, so it is "
+                          "sent again for seat 0's stuck turn (asked True, request 1)", text)
+            self.assertIn("CIVVIS jack 2 (seat 2)'s turn has stood 180 s, longer than any CIVVIS turn takes",
+                          text)
+            self.assertIn("its end of turn already sent, the game still processing messages", text)
+            self.assertIn("No CIVVIS controller has run on this seat, so the HUD leaves the turn alone", text)
+            self.assertIn("⚠ turn 9: CIVVIS jack 1 (seat 1) has been between turns 60 s and the next seat has "
+                          "not begun (its end of turn sent, game core busy False, processing messages True, "
+                          "2 event lock(s) held by a screen)", text)
+            self.assertIn("resume the save (--resume)", text)
+            self.assertIn("⚠ turn 5: the test stub's turn stands after 4 s (the stand-in's step 1): the game "
+                          "waits on a unit waiting for orders, answered held:0+cancelled:1, refusing every hold: "
+                          "UNIT_SCOUT 196608 (operation, moves 3/3, text:LOC_UNIT_BUSY_WITH_OPERATION), "
+                          "screens up: HistoricMoments, event locks held by: HistoricMoments (turn 5), "
+                          "end of turn forced 1 time(s), sent False", text)
+            self.assertIn("the test stub's turn stands after 4 s (the stand-in's step 1): the game waits on "
+                          "nothing the game names (no end-turn blocker)", text)
+            self.assertIn("turn 7: test stub (seat 0) — 0 opening orders applied (none)", text)
+            del lines[:]
+            report = hotseat.smoke_report(monitor, lines.append)
+            self.assertEqual(report["seats"]["0"]["stand_in_turns"], [5, 7], "once a turn")
+            stub = next(line for line in lines if line.startswith("report: Test stub"))
+            self.assertTrue(stub.endswith(", 1 turns ended by force, the stand-in stepped in on 2 turns (5, 7)"),
+                            stub)
+            jack = next(line for line in lines if line.startswith("report: CIVVIS jack 1"))
+            self.assertNotIn("stand-in", jack)
+            self.assertNotIn("by force", jack)
 
     def test_the_table_is_lost_only_when_both_seats_are_eliminated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

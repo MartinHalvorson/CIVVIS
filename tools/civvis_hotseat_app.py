@@ -127,9 +127,17 @@ def bundle_contents() -> dict:
             manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         except ValueError:
             manifest = {"error": "bundle.json does not parse"}
+    genes = civ6_hotseat.LIVE_FORCE_FILE
+    arms = civ6_hotseat.MOD_ARMS_FILE
     return {
         "frozen": FROZEN,
         "program": sys.executable,
+        # The live ladder's lists the seats are armed with (`--genome live`).
+        "live_force_on": str(genes),
+        "live_genes": (len(civ6_hotseat.force_tags(genes.read_text(encoding="utf-8")))
+                       if genes.is_file() else None),
+        "live_mod_arms": str(arms),
+        "mod_arms": civ6_hotseat.play.read_tree_mod_arms(arms) if arms.is_file() else None,
         "root": str(BUNDLE_ROOT),
         "mod_source": str(mod),
         "mod_files": shipped,
@@ -254,6 +262,12 @@ def print_report(report: dict) -> None:
     if bundle["frozen"]:
         line("civvis_orders", f"{bundle['civvis_orders']} ("
                               f"{'present' if bundle['civvis_orders_present'] else 'MISSING'})")
+    line("live genes", f"{bundle['live_force_on']} ("
+                       + (f"{bundle['live_genes']} genes" if bundle["live_genes"] is not None
+                          else "MISSING: the seats play the bare genome") + ")")
+    line("live mod arms", f"{bundle['live_mod_arms']} ("
+                          + (", ".join(bundle["mod_arms"]) or "none listed"
+                             if bundle["mod_arms"] is not None else "MISSING") + ")")
     manifest = bundle.get("manifest") or {}
     if manifest:
         line("built", f"{manifest.get('revision')} on {manifest.get('platform')} "
@@ -352,6 +366,7 @@ def selfcheck(argv: list[str]) -> int:
     step("mod install", lambda: _check_mod_install(state, root))
     step("log relay", lambda: _check_log_relay(state, root, args.events))
     step("decision worker", lambda: _check_worker(state, root, args.orders_bin, args.timeout))
+    step("live genome", lambda: _check_live_genome(state, root, args.orders_bin))
     step("worker stop", lambda: _check_worker_stop(state))
     step("game lock", lambda: _check_lock(state, root))
     step("processes", lambda: _check_processes(state))
@@ -511,6 +526,36 @@ def _check_worker(state: dict, root: Path, orders_bin: str | None, timeout_s: fl
             f"deciding with {pinned.name}")
 
 
+def _check_live_genome(state: dict, root: Path, orders_bin: str | None) -> str:
+    """The live ladder's two lists as this program ships them
+    (`civ6_hotseat.DEPLOY_DIR`: the bundle's own, frozen), and its decider
+    taking every gene listed. A gene it refused would be dropped from every
+    seat (`armed_treatments`) and be off in a player's game, said only in the
+    run's log; an arm the harness does not know would be ignored the same way."""
+    hotseat = state["hotseat"]
+    genes, arms_file = hotseat.LIVE_FORCE_FILE, hotseat.MOD_ARMS_FILE
+    if FROZEN:
+        for path in (genes, arms_file):
+            _need(path.is_relative_to(BUNDLE_ROOT), f"{path} is not this bundle's own")
+    # The shipped list itself: not this computer's override, nor the environment's.
+    wanted, source = hotseat.live_treatments(environ={}, local_file=root / "no-host-override")
+    _need(bool(wanted), f"no live gene list ({source}; looked for {genes})")
+    binary = hotseat.resolve_orders_bin(orders_bin)
+    _need(binary is not None, "no civvis_orders (pass --orders-bin)")
+    armed = hotseat.armed_treatments(binary, wanted, root)
+    _need(not armed["dropped"] and "refused" not in armed["note"]
+          and "could not be asked" not in armed["note"],
+          f"{binary.name} does not take {len(armed['dropped'])} of the {len(wanted)} listed genes "
+          f"({', '.join(armed['dropped'][:8])}): {armed['note'] or 'refused by name'}")
+    arms = hotseat.play.read_tree_mod_arms(arms_file)
+    unknown = [name for name in arms if name not in hotseat.play.TREE_MOD_ARMS]
+    _need(bool(arms) and not unknown,
+          f"mod arms {arms_file}: " + (f"unknown {unknown}" if unknown else "none listed"))
+    state["live_listed"] = len(wanted)
+    return (f"{binary.name} takes all {len(wanted)} genes of {genes.name} "
+            f"({len(armed['forced'])} beyond its deployment genome); mod arms {', '.join(arms)}")
+
+
 def _tail(seat_dir: Path, lines: int = 12) -> str:
     try:
         return " | ".join((seat_dir / "brain.log").read_text(
@@ -623,6 +668,16 @@ def _check_manual_lobby(state: dict, root: Path, orders_bin: str | None) -> str:
                                           .splitlines()[-8:]))
             time.sleep(0.5)
         _need("0 loaded for real" in text, f"not screen-free: {text.splitlines()[-1]}")
+        # The harness itself armed the shipped lists, and its decider took them.
+        genome = json.loads((run_dir / "genome.json").read_text(encoding="utf-8"))
+        _need(genome.get("genome") == "live" and genome.get("listed") and not genome.get("dropped"),
+              f"the harness armed {genome.get('listed')} genes from {genome.get('source')}, "
+              f"dropped {len(genome.get('dropped') or [])}: {genome.get('note')}")
+        installed = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+        _need(installed.get("StalledOperationRelease") is True
+              or "stalled-operation-release" not in state["hotseat"].play.read_tree_mod_arms(
+                  state["hotseat"].MOD_ARMS_FILE),
+              "the install did not take the live mod arms (StalledOperationRelease is off)")
         target = modinstall.install_dir()
         cover = target / f"{modinstall.HOTSEAT_COVER}.lua"
         _need(target.is_relative_to(root) and cover.is_file()
@@ -648,8 +703,10 @@ def _check_manual_lobby(state: dict, root: Path, orders_bin: str | None) -> str:
         else:
             _need(not target.exists(), "the harness ended with Civ VI closed and left its mod")
             removed = "removed by the harness"
-        return (f"installed screen-free from the flag alone, with the gated cover; --status saw "
-                f"it running; --stop ended it in {took:.1f}s, beat gone, mod {removed}")
+        return (f"installed screen-free from the flag alone, with the gated cover and "
+                f"{len(genome.get('with') or [])} of {genome.get('listed')} live genes from "
+                f"{genome.get('source')}; --status saw it running; --stop ended it in "
+                f"{took:.1f}s, beat gone, mod {removed}")
     finally:
         if harness.poll() is None:
             harness.kill()

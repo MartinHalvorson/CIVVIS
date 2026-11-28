@@ -159,12 +159,17 @@ impl AdvancedAi {
             .or_else(|| g.players[pid].holy_city.and_then(|cid| g.cities.get(&cid)))
             .map(|city| city.pos);
         let seeking = self.rival_seekers.borrow();
-        let mut corps: Vec<(bool, std::cmp::Reverse<i32>, u32)> = g
+        // `spreaders-spread-before-they-chart-2`: the most spent spreaders
+        // seek first, so the full ones keep the corps' known work. Zero (no
+        // reordering) off.
+        let spent_first = self.searchers_share_one_budget();
+        let mut corps: Vec<(i32, bool, std::cmp::Reverse<i32>, u32)> = g
             .units
             .values()
             .filter(|unit| unit.owner == pid && self.may_seek(g, pid, unit.id, religion))
             .map(|unit| {
                 (
+                    if spent_first { unit.charges } else { 0 },
                     !seeking.contains_key(&unit.id),
                     std::cmp::Reverse(home.map_or(0, |home| g.wdist(home, unit.pos))),
                     unit.id,
@@ -175,12 +180,17 @@ impl AdvancedAi {
         // One for each rival with no city on the map, one in `SCOUT_SHARE`
         // of the corps for the rivals short of a charted majority, and never
         // the last spreader: a corps of one spreads.
-        let seekers =
+        let mut seekers =
             (unseen + located.min(corps.len() / SCOUT_SHARE)).min(corps.len().saturating_sub(1));
+        // `spreaders-spread-before-they-chart-2`: within the corps' one
+        // search budget, less the last-charge scouts already out. `None` off.
+        if let Some(budget) = self.seekers_left_by_the_scouts(g, pid, corps.len()) {
+            seekers = seekers.min(budget);
+        }
         corps
             .into_iter()
             .take(seekers)
-            .map(|(_, _, id)| id)
+            .map(|(_, _, _, id)| id)
             .collect()
     }
 

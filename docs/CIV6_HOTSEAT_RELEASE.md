@@ -70,9 +70,11 @@ not have.
    `civvis-hotseat selfcheck` then proves the bundle works on this computer
    without touching the game, all in a scratch folder: it installs the mod the
    way `--manual-lobby` does, feeds a recorded opening board through a scratch
-   `Automation.log`, has a real decision worker answer it and stops it, then
-   starts `--manual-lobby` itself and stops it with `--stop` (about twenty
-   seconds).
+   `Automation.log`, has a real decision worker answer it and stops it, checks
+   that the bundled decider takes every gene on the live ladder's list the
+   bundle ships (`deploy/live-force-on.txt`, with its mod arms
+   `deploy/live-mod-arms.txt`: what the CIVVIS seats play), then starts
+   `--manual-lobby` itself and stops it with `--stop` (about twenty seconds).
 
 5. **macOS only:** the control mod is installed inside the game's application
    bundle, so the first install shows an App Management prompt, or answers
@@ -206,7 +208,7 @@ on a runner with no game.
 |---|---|---|
 | bundle builds (PyInstaller 6.22.3, Python 3.12) | measured, locally and in CI | measured, in CI |
 | `--help`, `--status`, `--stop`, `doctor` from the unpacked archive | measured | measured, in CI |
-| `selfcheck`: screen-free from the first import; the `--manual-lobby` install (five seat agents, the cover, `RequireHarness` in every prelude, no `FrontEndActions`) from the bundle into a scratch install tree; the `Automation.log` relay; a frozen worker answers a recorded board into SQLite with a `ready` row; the worker is recognised and stopped; a stale game lock is taken over; a child of the program inherits screen-free mode; the frozen `--manual-lobby` harness installs, `--status` sees it, `--stop` ends it and its beat and mod go | measured | measured, in CI |
+| `selfcheck`: screen-free from the first import; the `--manual-lobby` install (five seat agents, the cover, `RequireHarness` in every prelude, no `FrontEndActions`) from the bundle into a scratch install tree; the `Automation.log` relay; a frozen worker answers a recorded board into SQLite with a `ready` row; the bundled decider takes every gene of the bundled live list and every mod arm is known (since 2026-11-28; tests only until the first CI run of it); the worker is recognised and stopped; a stale game lock is taken over; a child of the program inherits screen-free mode; the frozen `--manual-lobby` harness installs, `--status` sees it, `--stop` ends it and its beat and mod go | measured | measured, in CI |
 | Steam install and user folder resolution | measured | unit-tested over fake trees (`tools/test_civ6_env.py`); on the runner, with no game, `doctor` reports the install not found and the user folder as `C:\Users\runneradmin\Documents\My Games\Sid Meier's Civilization VI` |
 | reading the process table and a process's command line | measured (`ps`) | measured, in CI: the Toolhelp table names the program, and PowerShell's command line lets `--status` recognise it |
 | the game discovers the mod | measured: install `DLC` only, never the user `Mods` | **unmeasured** |
