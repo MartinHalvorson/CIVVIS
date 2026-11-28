@@ -519,8 +519,8 @@ do
 		assert(w.walked[i].x == 8 and w.walked[i].y == 5,
 			"all to the same free plot beside the near one (the first free direction)")
 	end
-	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == "UserForced",
-		"in the same pass, forced")
+	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == nil,
+		"in the same pass, a plain end of turn (the crash's eReason was the plain one)")
 	local rec = w.kinds("stand_in_diag_rebegin")[1]
 	assert(rec and rec.turn == 3 and rec.sent == true and rec.x == 8 and #rec.walks == 3
 		and rec.walks[3].sent == true)
@@ -543,14 +543,17 @@ do
 	unit(o, 1, "UNIT_WARRIOR", 10, 1)
 	unit(o, 2, "UNIT_SCOUT", 11, 1)
 	assert(o.seat.standInDiag(3, 100) == true and #o.walked == 0 and #o.actions == 1)
-	-- A hard blocker standing: not then (a forced end of turn is refused under it).
+	-- A blocker standing, any blocker: not then (a plain end of turn is
+	-- refused under it), and the turn's try is not spent.
 	local h = diagWorld({ HotseatDiagRebegin = { 3 } }, 3)
 	h.blocker = RESEARCH
 	unit(h, 1, "UNIT_WARRIOR", 10, 2)
 	unit(h, 2, "UNIT_SCOUT", 13, 3)
 	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0)
+	h.blocker = UNITS
+	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0, "nor units")
 	h.blocker = nil
-	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 3, "a units blocker alone is no bar")
+	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 3, "once nothing blocks")
 	-- Without the key, or on a seat that does not stand in: nothing.
 	local plain = diagWorld({}, 3)
 	unit(plain, 1, "UNIT_WARRIOR", 10, 2)

@@ -31392,16 +31392,19 @@ end
 -- ★ DIAGNOSTIC ONLY: `HotseatDiagRebegin`, a list of game turns, set by no
 -- shipped launcher (a crash check game's own config). On a listed turn the
 -- stand-in does on purpose what live-6p-20261128T0819Zg's stand-in did by
--- accident on turn 6, in the same pass as a forced end of turn
--- (ActionPanel.lua:1099 `{ REASON = "UserForced" }`), past the settle guards
--- above: Scout 196608 walked one plot onto (46,23) and Scout 262146, three
--- moves and two plots away, was sent to the same plot; it stopped short with
--- movement left, and the engine handed the turn back. Here: a land combat
--- unit A walks to a free plot beside it, and a second one B with at least two
+-- accident on turn 6, past the settle guards above: walks and a PLAIN end of
+-- turn in one pass. That turn complete went out without a reason
+-- (`eReason=0xb6fa1284`, the code every CIVVIS seat's plain request carries;
+-- SHIFT+ENTER's `UserForced`, ActionPanel.lua:1099, is `0x720b6468`, and
+-- three check games of forced ends with walks in flight were never handed
+-- back): Scout 262146 was sent twice to (46,23) from two plots off, then
+-- Scout 196608 one plot onto it, and the engine handed the turn back. Here: a
+-- land combat unit A beside a free plot and a second one B with at least two
 -- moves, two or more plots from that plot (best: beside A, the plot beyond A,
--- as 262146 stood behind 196608), is sent there too (two land combat units
--- never share a plot), B first and twice, as the turn-6 stand-in sent 262146. Once a turn, only with nothing but units blocking; true when it sent
--- the end of turn.
+-- as 262146 stood behind 196608), are both sent there (two land combat units
+-- never share a plot), B first and twice. Once a turn, only with no blocker
+-- standing (a plain end of turn is refused under any); true when it sent the
+-- end of turn.
 function CivvisSeat.standInDiag(turn, now)
 	local turns = cfg.HotseatDiagRebegin;
 	if type(turns) ~= "table" or not CivvisSeat.standsIn() then return false; end
@@ -31413,7 +31416,7 @@ function CivvisSeat.standInDiag(turn, now)
 	if player == nil or pid ~= CivvisSeat.seat then return false; end
 	local blocker = currentBlocker(pid);
 	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
-	if blocker ~= nil and blocker ~= none and not UNIT_BLOCKERS[blockerName(blocker)] then return false; end
+	if blocker ~= nil and blocker ~= none then return false; end
 	st.diagTurn = turn;
 	local land = {};
 	eachUnit(player, function(unit)
@@ -31464,9 +31467,7 @@ function CivvisSeat.standInDiag(turn, now)
 				sent = walk(unit, plan.x, plan.y) == true };
 		end
 	end
-	local sent = CivvisK.attempt(function()
-		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
-	end);
+	local sent = CivvisK.attempt(function() UI.RequestAction(ActionTypes.ACTION_ENDTURN); end);
 	if type(now) == "number" then
 		CivvisQueue.endTurnSubmittedTurn, CivvisQueue.endTurnSubmittedAt = turn, now;
 	end
