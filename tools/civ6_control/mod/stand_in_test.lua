@@ -73,9 +73,10 @@ local function world(cfg, opts)
 			local ok, err = pcall(fn)
 			if not ok then w.errors[#w.errors + 1] = tostring(err) end
 		end },
+		-- The agent's `try`: the answer, nil included; the fallback on a throw.
 		try = function(fn, fallback)
 			local ok, value = pcall(fn)
-			if ok and value ~= nil then return value end
+			if ok then return value end
 			return fallback
 		end,
 		emit = function(kind, payload)

@@ -30338,9 +30338,9 @@ function CivvisSeat.standInScreens()
 		"WorldCongressIntro", "WorldCongressBetweenTurns", "InGamePopup", "PlayerChange",
 		"EndGameMenu",
 	}) do
-		if try(function() return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden(); end, nil) == false then
-			visible[#visible + 1] = name;
-		end
+		-- `pcall`, not `try`: a screen this ruleset lacks is not an error.
+		local ok, hidden = pcall(function() return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden(); end);
+		if ok and hidden == false then visible[#visible + 1] = name; end
 	end
 	local ledger = try(function() return ExposedMembers.CivvisEventLocks; end, nil);
 	if type(ledger) == "table" and type(ledger.held) == "table" then
