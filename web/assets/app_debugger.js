@@ -5415,10 +5415,6 @@ const STRANGE_NAME_MOST = 36;
 // worlds. so we can have a nice grid down below"), and how long it waits for
 // their worlds to be there before it lets time run on without the rest.
 const STRANGE_SEND_WORLDS = 12, STRANGE_SEND_WAIT_MS = 90000;
-// While Send it runs time on, the turn shown is the furthest every world
-// holds, less this many, so the line ahead of each world still shows some of
-// its future (`strangeAsk`).
-const STRANGE_SEND_KEEP = 4;
 // How many worlds Branch 5 Next Best makes (`strangeNext`).
 const STRANGE_NEXT_MANY = 5;
 // How far ahead of the open turn each world's future is played, and the most
@@ -6798,7 +6794,13 @@ function strangeAsk(run) {
     }
   }
   if (run.stop || run.at === run.end || run.letters.length === 0) { strangeRunOver(run); return; }
-  const next = run.end < run.at ? run.end : run.fast ? strangeFarthest(run)
+  // Time running shows every turn on the way, one after another (operator
+  // 2026-11-27: "turn count appears to be skipping turns ... please fix such
+  // that the turn counts iterates more smoothly and the mapstate match the
+  // turn count"). Send it (`fast`) is no exception: its worlds' engines play
+  // on ahead of the turn shown the whole time, so each turn it shows is one
+  // its worlds already hold, and showing it is a walk along their lines.
+  const next = run.end < run.at ? run.end
     : run.play ? run.at + 1 : Math.min(run.end, Math.max(run.at + 1, Math.min(...run.letters.map(strangeKept))));
   // A world whose game is over by then stays on the turn it ended on, and
   // time goes on for the rest; it stops only when every world's game is over
@@ -6827,28 +6829,6 @@ function strangeAsk(run) {
   }
   strangeDraw();
 }
-// The turn Send it shows next (`fast`): the furthest turn every world still
-// playing holds, less `STRANGE_SEND_KEEP`, and never less than the next.
-// Measured on the published engine (2026-11-27, ten worlds from turn 1 to
-// the end, 18 cores), time showing each turn took 67 s, and every world held
-// 11 or 12 turns ahead of it the whole way: time waited on the page drawing
-// ten boxes a turn (its one thread 83% busy, two fifths of that the browser
-// laying out and painting them), never on a world. Drawn only as often as
-// the page can, a turn shown is as far on as the worlds have played, and
-// each world's engine plays on ahead the whole time (`strangeAheadDone`), so
-// the worlds go as fast as their engines play them, each on a core: 52 s
-// against 77 s for the same ten worlds run back to back (with no scouts
-// beside them, `strangeForesee`, and less measuring in the boxes).
-//
-// A world with no turns left to play ahead (its game ends there,
-// `strangeSpent`) is taken all the way to the last it holds, so its last
-// turn is shown and it says how its game ended.
-function strangeFarthest(run) {
-  const live = run.letters.filter(letter => !strangeEnded(letter, run.at + 1));
-  if (live.length === 0) return run.at + 1;
-  const reach = Math.min(...live.map(letter => strangeKept(letter) - (strangeSpent(letter) ? 0 : STRANGE_SEND_KEEP)));
-  return Math.min(run.end, Math.max(run.at + 1, reach));
-}
 // The worlds holding a turn are shown it, at once. While time runs each is
 // asked in the same breath for the turn of its future that showing this one
 // takes from what it holds (`strangeAheadOwed`), so its engine plays that
@@ -6863,6 +6843,20 @@ function strangeShow() {
     if (ahead > 0) strange.peeks[letter] = {turns: ahead, since: performance.now()};
     debugSplitTell(letter, ahead > 0 ? {civvis: "pane-show", ahead} : {civvis: "pane-show"});
   }
+}
+// The turn on the screen. While time runs, it is the one the worlds were
+// last told to show (`strangeStep`), and the label says it in the same
+// breath, so it changes with the maps: read off the followed world, it
+// changed only once that world had said it was there and the page was next
+// drawn, a turn behind the maps one look in seven, and a turn the page was
+// not drawn on was never said at all.
+function strangeShowing() {
+  const run = strange.run;
+  return run && typeof run.showing === "number" ? run.showing : strangeNow();
+}
+function strangeTurnSay(turn) {
+  const held = strange.hud && strange.hud.querySelector('[data-strange="turn"]');
+  if (held && typeof turn === "number" && held.textContent !== String(turn)) held.textContent = String(turn);
 }
 // Whether a world's game is over before `turn`: it ended on an earlier one
 // (`pane-over`), or the world stands short of a turn it could not play while
@@ -6959,7 +6953,12 @@ function strangeStep() {
   };
   const letters = run.letters.filter(letter => strange.order.includes(letter) && split.panes[letter] && !strangeEnded(letter, run.asked));
   if (letters.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
-  if (!run.shown && letters.every(ready)) { run.shown = true; strangeShow(); }
+  if (!run.shown && letters.every(ready)) {
+    run.shown = true;
+    run.showing = run.asked;
+    strangeShow();
+    strangeTurnSay(run.showing);
+  }
   const there = letter => split.panes[letter].turn === run.asked;
   if (letters.every(there)) {
     // Time runs as fast as the worlds are played and drawn: a turn is on
@@ -8182,13 +8181,13 @@ function strangeDraw() {
   if (!open.includes(strange.follow)) strange.follow = open[0];
   const tree = strange.tree = strangeTree(), panes = split.panes, follow = strange.follow;
   const idle = strangeIdle(), many = open.length > 1, one = !Number.isFinite(tree.splits);
-  const turn = strangeNow() ?? tree.from, limit = strangeLimit();
+  const turn = strangeNow() ?? tree.from, limit = strangeLimit(), showing = strangeShowing() ?? turn;
   const set = (name, text) => { const held = hud.querySelector(`[data-strange="${name}"]`); if (held.textContent !== text) held.textContent = text; return held; };
-  set("turn", String(turn));
+  set("turn", String(showing));
   set("limit", limit ? `/ ${limit}` : "");
   // The era is the last the followed world says it came into by the open turn.
-  const came = ((panes[follow].marks || {}).eras || []).filter(era => era.turn <= turn).pop();
-  set("era", came ? `${debugEraName(came)} era` : typeof state.world_era === "number" && turn === state.turn ? `${debugEraName({era: state.world_era})} era` : "");
+  const came = ((panes[follow].marks || {}).eras || []).filter(era => era.turn <= showing).pop();
+  set("era", came ? `${debugEraName(came)} era` : typeof state.world_era === "number" && showing === state.turn ? `${debugEraName({era: state.world_era})} era` : "");
   const going = split.running > 0 || strange.run !== null;
   const play = set("play", going ? (strange.run && strange.run.stop ? "⏸ Pausing…" : "⏸ Pause Time") : "▶ Play Time");
   play.disabled = !split.shown || split.busy || (!going && (!idle || (limit !== null && turn >= limit)));
@@ -9249,7 +9248,14 @@ const TOMORROW_STYLE = `
      report buttons, the map and the left panel stay, and the seat is moved
      only by Auto-play (\`civvisSeatHandsOff\`). */
   html.tomorrow #ubar, html.tomorrow #actionpanel, html.tomorrow #worldtracker,
-  html.tomorrow #notify .notice.tone-action { display: none !important; }
+  html.tomorrow #notify .notice.tone-action, html.tomorrow #civtop { display: none !important; }
+  /* Operator 2026-11-27: "from edge of tomorrow we can remove the old yield
+     hud with science, culture, etc." Civ 6's yield strip (\`#civtop\`, in
+     the rule above) is gone, and so is the room the screen keeps for it: the
+     standings take the top of the window, and the launch bar, the hooks and
+     the tracker stand under them, by the screen's own rules, which all count
+     the strip's height. */
+  html.tomorrow body.civ6-frame #maparea { --civtop-height: 0px; }
   /* Operator 2026-11-26: "civvis: edge of tomortrow should not have the
      world minimap or <...(spin)x thing showing". The minimap and the map's
      controls (deck, compass, zoom, spin, close) are put away, and the map is
@@ -9264,53 +9270,19 @@ const TOMORROW_STYLE = `
      box stands as it does in the Debugger view (\`civvisSeatTracker\`),
      without the live mirror's Pause and New game. */
   html.tomorrow .livepause-buttons, html.tomorrow #livepause-note { display: none !important; }
-  /* Operator 2026-11-26: "move the menu with quick deals and other stuff
-     inside, to the left of the victory tracker". While the Rankings are
-     open, Civ 6's upper-right hooks (Rankings, Diplomacy, Reports, Era,
-     Trade routes, City-States, Espionage) stand in a column down the
-     tracker's left side, and the tracker climbs into the band they took
-     under the standings. The notifications step inboard of the column. A
-     map area narrow enough to stack the Rankings into one band keeps the
-     hooks where they were. */
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar {
-    top: var(--solo-bar-top); right: calc(var(--panel-edge) + var(--victory-hud-width) + var(--panel-gap));
-    max-width: none; max-height: calc(100% - var(--solo-bar-top) - var(--panel-edge));
-    flex-direction: column; overflow: hidden auto;
-  }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooktabs { flex-direction: column; }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar .launch-rule {
-    width: 26px; height: 1px; margin: 3px 0; background: linear-gradient(90deg, transparent, #77978b, transparent);
-  }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #victoryhud { top: var(--solo-bar-top); }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #notify {
-    right: calc(var(--panel-edge) + var(--victory-hud-width) + 2 * var(--panel-gap) + 62px);
-  }
+  /* The hooks (Rankings, Diplomacy, Reports, Era, Trade routes, City-States,
+     Espionage) stand as on every Civilization VI screen: a row in the upper
+     right, in their own order, under the standings (operator 2026-11-27:
+     "the bar with espioage should be in the normal order and horizontal").
+     They stood in a column beside the tracker from 2026-11-26 ("move the
+     menu with quick deals and other stuff inside, to the left of the victory
+     tracker"). */
   /* The standings open short here (\`measureTurnPlateNeed\`, below), so the
      turn box is shorter than what it lists. Its rows down to the turn count
      keep their own height rather than giving way (the age, which hides its
      overflow, would fold to nothing and the turn's numeral ride up over it),
      and the box's own edge covers the rest. */
   html.tomorrow #playerhud .victory-turn > :not(.turn-settings) { min-height: min-content; }
-  /* Operator 2026-11-26: "on civvis edge of tomorrow the top bar with
-     science, cul yields, etc should move below the player hud". The
-     standings take the top of the window and Civ 6's yield strip
-     (\`#civtop\`) runs across under them; the launch bar, the hooks and the
-     tracker still begin under both (\`--solo-bar-top\` counts the strip
-     after the standings rather than before them). With the standings folded
-     away the strip is at the top again. */
-  html.tomorrow body.civ6-frame #maparea {
-    --tmr-civtop-top: 0px;
-    --solo-bar-top: calc(var(--tmr-civtop-top) + var(--civtop-height) + var(--panel-gap));
-  }
-  html.tomorrow body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea {
-    --tmr-civtop-top: calc(var(--panel-gap) + var(--solo-masthead));
-  }
-  html.tomorrow body.civ6-frame #civtop { top: var(--tmr-civtop-top); }
-  html.tomorrow body.civ6-frame.rankings-open #playerhud,
-  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud { top: var(--panel-gap); }
-  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {
-    top: calc(2 * var(--panel-gap) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)));
-  }
 `;
 
 const tomorrow = {

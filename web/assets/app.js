@@ -3463,7 +3463,7 @@ if (playerHudPanel) {
 // it keeps the shared body scale and lets its panel scroll naturally.
 const RESPONSIVE_TEXT_RULES = [
   // The tagline's three phrases are unbreakable on every band — the name,
-  // the purpose, "(fan project, free)" — so all of them
+  // the purpose, "(fan project, open source, free)" — so all of them
   // measure for real and shrink the run instead of letting it fold, `together`
   // so the lines stay one size. The split keeps the compact band's smaller
   // ceiling and retires a stale fitted size left when the deck changes band.

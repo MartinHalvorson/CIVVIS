@@ -347,14 +347,22 @@
     font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
   /* The lockup is always the same three lines: the simulator's name, its
-     purpose, then "(fan project, free)" (operator, 2026-11-27: "change to ...
-     fixing the Civ AI (fan project, free)"; on the purpose's line it would
-     not fit the lane even at the fitter's floor). Each phrase owns exactly
+     purpose, then "(fan project, open source, free)" (operator, 2026-11-27,
+     the note first added to the purpose and then put on a line of its own;
+     on the purpose's line it would not fit the lane even at the fitter's
+     floor). Each phrase owns exactly
      one line at every band — never joined
      into a sentence, never folded mid-phrase — so the spans are unbreakable
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #d6ddd9; }
+  /* The note under the purpose sits a little lower and 30% smaller
+     (operator, 2026-11-27: "change (fan project, open source, free) to a
+     newline ... on civvis, make it a little lower, and smaller. mayb 30%
+     smaller"). Its span is fitted with the other two, so the size is set on
+     a child: 70% of whatever size the fitter gives the lines above it. */
+  .tagline span.tagline-note { margin-top: 3px; }
+  .tagline .tagline-note small { font-size: 70%; }
   /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
@@ -380,9 +388,16 @@
      tool"), so this page, which is CIVVIS, AI Debugger, Doctor Strange's
      Civ 6 and Edge of Tomorrow, lists the eight top-level names and no
      branch. */
+  /* Tournaments stands before Charts/ and CIVVIS just above AI Debugger
+     since 2026-11-28 (operator: "move tournaments above charts in the
+     ordering", "move civvis above the civvis ai debugger in the ordering"),
+     so the first row is HOME in four tenths and TOURNAMENTS in six, and
+     CHARTS/ and CIVVIS, each now beside a name with a row of its own, take
+     whole rows. */
   .head-links > .home-link { grid-column: span 5; }
+  .head-links > #homelink { grid-column: span 4; }
   .head-links > #tourlink { grid-column: span 6; }
-  .head-links > #watchlink { grid-column: span 4; }
+  .head-links > #chartslink, .head-links > #watchlink { grid-column: 1 / -1; }
   /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
      6 above ai debugger", after CIVVIS) is the one name longer than half a
      row and has a row of its own. AI Debugger and Civ 6 keep the rows of
@@ -6813,7 +6828,7 @@
       </div>
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span><span>(fan project, free)</span></div>
+        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span><span class="tagline-note"><small>(fan project, open source, free)</small></span></div>
       </div>
       <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
@@ -6846,11 +6861,11 @@
            is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
-        <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
-        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
+        <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="strangelink" href="doctor-strange" target="_top">Doctor Strange's CIVVIS</a>
         <a class="home-link" id="tomorrowlink" href="edge-of-tomorrow" target="_top">CIVVIS: Edge of Tomorrow</a>
+        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="playlink" href="debugger" target="_top">CIVVIS AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>

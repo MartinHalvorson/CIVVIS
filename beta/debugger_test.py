@@ -4538,22 +4538,28 @@ def check_doctor_strange_send_it(bar: Bar, address: str) -> None:
         bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
         assert len(set(bar.ev(turns))) == 1
         # With nothing left to branch, Send it runs the worlds on, as fast as
-        # they are played: each world's future is played ahead of the turn
-        # shown, and the turn shown is the furthest every world holds, less
-        # STRANGE_SEND_KEEP, not each turn on the way.
+        # they are played and drawn: each world's future is played ahead of
+        # the turn shown, and every turn on the way is shown, one after
+        # another, with the label saying each (operator 2026-11-27: "turn count
+        # appears to be skipping turns ... please fix such that the turn counts
+        # iterates more smoothly and the mapstate match the turn count").
         assert bar.ev(f"document.querySelector('{button}').title") == "12 worlds are open, which is the most: run all 12 worlds out to the end"
         bar.ev("strange.futures = true, strangeAheadNext(), true")
         bar.until("Object.keys(strange.peeks).length === 0 && strangeOpen().every(letter => strangeKept(letter) - debugSplit.panes[letter].turn >= STRANGE_AHEAD)",
                   "each world holds its future ahead", seconds=60)
         stood = bar.ev(f"{turns}[0]")
-        bar.ev("window.strangeShown = []; window.strangeWatch = setInterval(() => { const run = strange.run;"
-               " if (run && strangeShown[strangeShown.length - 1] !== run.at) strangeShown.push(run.at); }, 2), true")
+        bar.ev("window.strangeShown = []; window.strangeSaid = []; window.strangeWatch = setInterval(() => { const run = strange.run;"
+               " if (run && strangeShown[strangeShown.length - 1] !== run.at) strangeShown.push(run.at);"
+               " const said = +document.querySelector('#strange-hud [data-strange=\"turn\"]').textContent;"
+               " if (run && strangeSaid[strangeSaid.length - 1] !== said) strangeSaid.push(said); }, 2), true")
         bar.click(button)
         bar.until(f"strange.run !== null && strange.run.fast && {together(stood + 20)}", "Send it runs time on", seconds=60)
         assert bar.ev(said) == "Send it: time runs on for all 12 worlds, to the end.", bar.ev(said)
-        shown = bar.ev("clearInterval(strangeWatch), strangeShown")
+        shown, said_turns = bar.ev("clearInterval(strangeWatch), [strangeShown, strangeSaid]")
         steps = [later - earlier for earlier, later in zip(shown, shown[1:])]
-        assert shown[0] == stood and steps and steps[0] == bar.ev("STRANGE_AHEAD - STRANGE_SEND_KEEP") and max(steps) > 1, shown
+        assert shown[0] == stood and steps and set(steps) == {1}, shown
+        said_steps = [later - earlier for earlier, later in zip(said_turns, said_turns[1:])]
+        assert said_steps and set(said_steps) == {1}, said_turns
         bar.click('#strange-hud [data-strange="play"]')
         bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
         assert len(set(bar.ev(turns))) == 1
@@ -4972,11 +4978,11 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     # Operator, 2026-11-26: "move the menu with quick deals and other stuff
     # inside, to the left of the victory tracker", and "lets start with the
     # player hud a more minimized size. turn count should completely show.
-    # the stuff below it can be covered by the minimiziation". The stand-in
-    # page has no Civilization VI screen, so the rules that stand the hooks
-    # in a column beside the tracker, and the tracker up in their band, are
-    # read from the page's styles. The standings are sized to the turn count:
-    # on a turn box of its shape the height asked for ends 8px under it.
+    # the stuff below it can be covered by the minimiziation". The hooks'
+    # column beside the tracker was undone on 2026-11-27 (below). The
+    # stand-in page has no Civilization VI screen, so the page's styles are
+    # read. The standings are sized to the turn count: on a turn box of its
+    # shape the height asked for ends 8px under it.
     placed = bar.ev("""(() => {
       const rules = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules]; } catch (_) { return []; } })
         .filter(rule => rule.style);
@@ -4991,26 +4997,26 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
       document.body.append(hud);
       const need = measureTurnPlateNeed(hud);
       hud.remove();
-      return {column: hooks.flexDirection, top: hooks.top, beside: String(hooks.right).includes('--victory-hud-width'),
-        tracker: at('#victoryhud').style.top, need};
+      // The hooks stand as on every Civilization VI screen, a row in their
+      // own order (operator 2026-11-27: "the bar with espioage should be in
+      // the normal order and horizontal"): no rule of this page moves them.
+      const moved = rules.filter(rule => /html\.tomorrow[^{]*#(hooksbar|hooktabs)/.test(rule.selectorText)).map(rule => rule.selectorText);
+      return {column: hooks.flexDirection || null, moved, tracker: at('#victoryhud').style.top || null, need};
     })()""")
-    assert placed == {"column": "column", "top": "var(--solo-bar-top)", "beside": True, "tracker": "var(--solo-bar-top)", "need": 90}, placed
-    # The yield strip runs under the standings (operator 2026-11-26: "on
-    # civvis edge of tomorrow the top bar with science, cul yields, etc should
-    # move below the player hud"): the standings at the top, the strip under
-    # them, and the bars still under both; folded away, the strip is at the top.
+    assert placed == {"column": None, "moved": [], "tracker": None, "need": 90}, placed
+    # The yield strip is gone (operator 2026-11-27: "from edge of tomorrow
+    # we can remove the old yield hud with science, culture, etc."), and so is
+    # the room kept for it: the screen's own rules, which count its height,
+    # stand the standings at the top and the bars and tracker under them. The
+    # rules that set the strip under the standings went with it.
     strip = bar.ev("""(() => {
       const rules = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules]; } catch (_) { return []; } })
         .filter(rule => rule.style);
-      const at = pick => (rules.find(rule => rule.selectorText === pick) || {style: {getPropertyValue: () => '', top: ''}}).style;
-      const area = at('html.tomorrow body.civ6-frame #maparea'), open = at('html.tomorrow body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea');
-      return {strip: at('html.tomorrow body.civ6-frame #civtop').top, folded: area.getPropertyValue('--tmr-civtop-top').trim(),
-        bars: area.getPropertyValue('--solo-bar-top').trim(), open: open.getPropertyValue('--tmr-civtop-top').trim(),
-        hud: at('html.tomorrow body.civ6-frame.rankings-open #playerhud, html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud').top};
+      const at = pick => (rules.find(rule => rule.selectorText === pick) || {style: {getPropertyValue: () => ''}}).style;
+      return {height: at('html.tomorrow body.civ6-frame #maparea').getPropertyValue('--civtop-height').trim(),
+        under: rules.some(rule => rule.style.getPropertyValue('--tmr-civtop-top'))};
     })()""")
-    assert strip == {"strip": "var(--tmr-civtop-top)", "folded": "0px",
-                     "bars": "calc(var(--tmr-civtop-top) + var(--civtop-height) + var(--panel-gap))",
-                     "open": "calc(var(--panel-gap) + var(--solo-masthead))", "hud": "var(--panel-gap)"}, strip
+    assert strip == {"height": "0px", "under": False}, strip
     # What Auto-play's note says is said on the bar.
     bar.ev("document.getElementById('autoplaynote').textContent = 'Stopped · 3 turns unplayed', true")
     bar.until("document.getElementById('tmr-said').textContent === 'Stopped · 3 turns unplayed'", "the note is said on the bar")
@@ -5063,10 +5069,10 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
         .flatMap(rule => rule.selectorText.split(',').map(part => part.trim()));
       return {off: window.civvisSeatHandsOff, same: state.turn === turn, pending: turnAdvancePending,
               autoplay: gone('autoplaybtn') === false,
-              gone: ['#ubar', '#actionpanel', '#worldtracker', '#notify .notice.tone-action'].filter(part => hidden.includes('html.tomorrow ' + part))};
+              gone: ['#ubar', '#actionpanel', '#worldtracker', '#notify .notice.tone-action', '#civtop'].filter(part => hidden.includes('html.tomorrow ' + part))};
     })()""")
     assert hands == {"off": True, "same": True, "pending": False, "autoplay": True,
-                     "gone": ["#ubar", "#actionpanel", "#worldtracker", "#notify .notice.tone-action"]}, hands
+                     "gone": ["#ubar", "#actionpanel", "#worldtracker", "#notify .notice.tone-action", "#civtop"]}, hands
     assert bar.sent() == [], bar.sent()
     # Loop 1, on the first turn: there is nothing to jump back from and the
     # wake point is where it is.
@@ -5469,8 +5475,8 @@ def main() -> int:
               "time stops only when the last world's game is over.")
         print("Doctor Strange's CIVVIS has Send it at the foot of the tree on the left: it branches the base "
               "timeline for the best player strategies without a world of their own there, up to twelve worlds in "
-              "three rows of four, best first, and runs time on for every world together to the end, showing the "
-              "furthest turn every world holds while each world's future is played ahead; with nothing left to "
+              "three rows of four, best first, and runs time on for every world together to the end, showing "
+              "every turn on the way, the count with it, while each world's future is played ahead; with nothing left to "
               "branch it runs the worlds on. Its steps read Turn 1, Era back, -10, -1, +1, +10, Era forward: Era "
               "back goes to the start of the followed world's era, then of the era before, and Era forward to the "
               "next era's first turn, playing on to it when it has not been played.")
