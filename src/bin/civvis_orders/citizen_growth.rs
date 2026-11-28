@@ -192,7 +192,7 @@ pub(super) fn verify(order: &IssuedOrder, after: &mirror::StateSnapshot) -> Verd
         let (Some(favored), Some(managed)) =
             (city.production_favored, city.production_focus_managed)
         else {
-            return Verdict::Unverifiable;
+            return Verdict::Failed("production_focus_not_exported".into());
         };
         return match (verb, favored, managed) {
             ("FAVOR_PRODUCTION", true, true) | ("RELEASE_PRODUCTION", false, false) => {
