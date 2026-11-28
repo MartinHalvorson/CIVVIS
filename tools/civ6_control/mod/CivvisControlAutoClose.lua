@@ -586,7 +586,20 @@ end
 -- The shipped screen, unchanged and unread. A context's id is the name of the
 -- script the game loads into it, so asking for that name asks for exactly the
 -- file this replacement stands in front of.
-if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
+-- ★ QUICK DEALS. The Workshop mod Quick Deals (2460661464, the owner's, on this
+-- Mac) replaces this same context at `<LoadOrder>99999</LoadOrder>`
+-- (QuickDeals.modinfo `qd_diplomacyactionview`), so it, not this file, was the
+-- leader screen in every hotseat game here (28 runs: `autoclose_armed` for
+-- DiplomacyDealView, never for DiplomacyActionView; Modding.log applies
+-- `qd_diplomacyactionview` after `CivvisControlAutoCloseDiplomacyActionView`).
+-- A hotseat install now sits above it (install.py `HOTSEAT_LOAD_ORDER`), and so
+-- loads it first where it is installed: its file includes the stock chain
+-- itself (diplomacyactionview_qd.lua:4-16, Expansion2 first) and keeps its own
+-- deal screen working (:28-57), which the shipped chain alone would drop.
+if NAME == "DiplomacyActionView" then pcall(function() include("diplomacyactionview_qd"); end); end
+if CHAINED[NAME] and type(QD_BASE_LateInitialize) ~= "function" then
+	pcall(function() include(CHAINED[NAME]); end);
+end
 if not haveScreen() then pcall(function() include(NAME); end); end
 
 -- ReplaceUIScript bypasses the expansion add-ons unless we chain them too.

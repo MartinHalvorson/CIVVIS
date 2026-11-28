@@ -132,6 +132,19 @@ class HotseatInstallTest(unittest.TestCase):
         self.assertEqual(served, ["CivvisControlAutoClose.lua"])
         self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
                          (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        # The leader screen's closer sits above Quick Deals' replacement of the same
+        # context (LoadOrder 99999), in hotseat only.
+        orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                  tree.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertEqual(orders["DiplomacyActionView"], str(install.HOTSEAT_LOAD_ORDER))
+        self.assertGreater(install.HOTSEAT_LOAD_ORDER, 99999)
+        shipped = ET.fromstring((install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        shipped_orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                          shipped.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertIsNone(shipped_orders["DiplomacyActionView"], "a single-player install's is as it was")
+        self.assertEqual({k: orders[k] for k in shipped_orders if k != "DiplomacyActionView"},
+                         {k: v for k, v in shipped_orders.items() if k != "DiplomacyActionView"},
+                         "no other screen's order changes")
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)
