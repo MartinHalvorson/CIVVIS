@@ -278,6 +278,38 @@ fn a_refused_tile_steps_to_a_plot_it_can_found_this_turn() {
 }
 
 #[test]
+fn a_persons_scout_at_peace_cannot_chase_the_first_settler_off_its_site() {
+    // Under `person-units-threaten-civilians` a person's Scout three tiles
+    // off prices the site at the capture tier at peace: without this gene the
+    // Settler steps off its site, as it did from the barbarian Scout.
+    let board = |on: bool| {
+        let mut g = world();
+        g.at_war.remove(&(0, 1));
+        g.at_war.remove(&(1, 0));
+        assert!(!g.is_at_war(0, 1));
+        Arc::make_mut(&mut g.observed_person_rivals).insert(1);
+        g.spawn_test_unit("scout", 1, scout_tile());
+        let uid = settler_at(&mut g, site());
+        let mut ai = seat(on);
+        ai.enable_person_units_threaten_civilians();
+        ai.settler_targets.insert(uid, site());
+        ai.capital_founds_clock = Some(1);
+        (g, ai, uid)
+    };
+    let (mut g, mut ai, uid) = board(false);
+    ai.advanced_settler_step(&mut g, 0, uid);
+    assert!(
+        g.player_city_ids(0).is_empty(),
+        "off, the person's Scout wins"
+    );
+    assert_ne!(g.units[&uid].pos, site());
+
+    let (mut g, mut ai, uid) = board(true);
+    assert!(ai.advanced_settler_step(&mut g, 0, uid));
+    assert!(g.city_at(site()).is_some(), "on, the capital stands");
+}
+
+#[test]
 fn a_seat_with_a_city_an_overwhelming_army_and_the_gene_off_are_untouched() {
     // A seat that already holds a city is left to the rules it had.
     let (mut g, mut ai, uid, _) = turn_three(true);
