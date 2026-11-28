@@ -7927,6 +7927,15 @@
           "siege-tier-yields-to-the-bombers-2": null
         }
       },
+      "spreaders-spread-before-they-chart": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "spreaders-spread-before-they-chart": null,
+          "spreaders-spread-before-they-chart-2": null
+        }
+      },
       "staging-gun-trusts-its-escort": {
         "rule_on": [
           "staging-gun-trusts-its-escort-2"
