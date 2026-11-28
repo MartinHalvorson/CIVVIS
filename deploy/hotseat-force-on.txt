@@ -18,3 +18,9 @@ taken-settler-is-retaken
 science-seat-writes-first
 # A seat that draws Kupe starts at sea and never founded (#6034; one version of the family only).
 founding-voyage-2
+# Two of p2's three soldiers stood stacked in Krakow, every hold refused, the turn ended
+# by force, turns 15-16 (for-gameplay.md G1; #6020).
+stacked-soldiers-step-apart
+# A delegation, deal or Trader route refused in frame 0 was sent again in the next frame,
+# one more round trip inside the person's wait each time (for-gameplay.md G2; #6024).
+asks-go-once-a-turn
