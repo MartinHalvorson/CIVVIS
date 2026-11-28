@@ -30222,7 +30222,7 @@ end
 --      Cancel button) and is held again; an envoy prompt is marked considered
 --      (CityStates.lua:452); any other blocker gets the ladder's answer
 --      (research, civic, production, policies, pantheon, governor, dedication,
---      government). Then the notification is dismissed and the end of turn
+--      government), with a fresh pass of its budget each step. Then the notification is dismissed and the end of turn
 --      asked with the shipped SHIFT+ENTER request (ActionPanel.lua:1099
 --      `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`).
 --   3. `stand_in_stuck` says, in one record, exactly what stands: the blocker,
@@ -30364,7 +30364,16 @@ function CivvisSeat.standInStep(player, pid, turn, st, now, source)
 		elseif name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then
 			answered = CivvisMarkEnvoyConsidered(player) and "considered" or "considered_unavailable";
 		else
+			-- One fresh answer a step. The ladder's per-turn budgets (`spend`:
+			-- two passes for research or a civic) can all go in the turn's first
+			-- tenth of a second, every game-core tick answering again while the
+			-- first request has not landed, and a hard blocker with no answer
+			-- left is a turn that cannot end: a forced end turn is refused under
+			-- it. The loop's own budgets are put back as they were.
+			local spent = {};
+			for key, used in pairs(passes) do spent[key], passes[key] = used, nil; end
 			answered = answerBlocker(player, pid, blocker, turn, true);
+			for key, used in pairs(spent) do passes[key] = math.max(used, passes[key] or 0); end
 		end
 		dismissed = dismissBlocker(pid, blocker);
 	end

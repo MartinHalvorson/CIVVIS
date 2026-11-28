@@ -682,8 +682,10 @@ publishes almost none. Now, on its own turn only:
   units are held in place, one refusing every hold has its stale operation or
   queued path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36) and is held
   again, an envoy prompt is marked considered (CityStates.lua:452), any other
-  blocker gets the ladder's answer; then the notification is dismissed and the
-  end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
+  blocker gets the ladder's answer, with a fresh pass each step (the loop can
+  spend the ladder's two research or civic passes in the turn's first tenth of
+  a second, while its requests are still refused); then the notification is
+  dismissed and the end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
   `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`);
 - `stand_in_stuck` says in one record what still stands: the blocker and the
   answer, each unit still refusing (moves, activity, queued path, the engine's
