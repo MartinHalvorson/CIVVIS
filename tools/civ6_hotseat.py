@@ -759,7 +759,7 @@ def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
-                  treatments: list[str] | None = None) -> list[str]:
+                  treatments: list[str] | None = None, poll_s: float | None = None) -> list[str]:
     """One jack seat's decision worker: the live seat's brain, pinned binary,
     with the live genes it is armed with (`--with`, as the ladder's
     `civ6_play.civvis_brain_command` passes them).
@@ -778,6 +778,9 @@ def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
                "--seconds", str(14 * 24 * 3600)]
     for tag in treatments or []:
         command += ["--with", tag]
+    # `--fast-turns`: the worker reads its journal every `FAST_POLL_S`.
+    if poll_s:
+        command += ["--poll-seconds", f"{poll_s:g}"]
     return command
 
 
@@ -852,10 +855,12 @@ class Brains:
     """One `civ6_brain.py` per jack seat, restarted if one dies."""
 
     def __init__(self, run_dir: Path, tag: str, seats: list[int], orders_db: Path,
-                 binary: Path, victory: str, log: Log, treatments: list[str] | None = None):
+                 binary: Path, victory: str, log: Log, treatments: list[str] | None = None,
+                 poll_s: float | None = None):
         self.run_dir, self.tag, self.seats = run_dir, tag, seats
         self.orders_db, self.binary, self.victory, self.log = orders_db, binary, victory, log
         self.treatments = list(treatments or [])
+        self.poll_s = poll_s
         self.procs: dict[int, subprocess.Popen] = {}
         self.restarts: dict[int, int] = {seat: 0 for seat in seats}
         self.retry_at: dict[int, float] = {}
@@ -876,7 +881,7 @@ class Brains:
         self.procs[seat] = subprocess.Popen(
             brain_command(seat_dir, self.orders_db, self.binary,
                           self.victory[seat] if isinstance(self.victory, dict) else self.victory,
-                          self.treatments),
+                          self.treatments, self.poll_s),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
             **worker_session())
         out.close()
@@ -2006,6 +2011,23 @@ class Journal:
 #: game's log is relayed to the decision workers in between (`relay_for`).
 PASS_S = 0.5
 RELAY_S = 0.02
+#: `--fast-turns`: the relay's and each worker's read every 10 ms instead of 20
+#: and 25. A board waits half a read on average at each, about 10 ms in all a
+#: board, a dozen boards a round at turn 30 (hotseat-20261128T045523Z: one
+#: opening and 1.4 extra frames per seat-turn, five seats). Each read is one
+#: stat-and-read of a log's new bytes.
+FAST_RELAY_S = 0.01
+FAST_POLL_S = 0.01
+
+
+def relay_seconds(args: argparse.Namespace) -> float:
+    """How often this table's log is relayed to its workers."""
+    return FAST_RELAY_S if getattr(args, "fast_turns", False) else RELAY_S
+
+
+def poll_seconds(args: argparse.Namespace) -> float | None:
+    """How often each worker reads its journal; None: the worker's own 25 ms."""
+    return FAST_POLL_S if getattr(args, "fast_turns", False) else None
 
 
 def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
@@ -3608,6 +3630,7 @@ def run_manual(args: argparse.Namespace) -> int:
                              if agents else args.victory)
                     brains = Brains(run_dir, args.tag, civvis, orders_db, binary, lanes, log,
                                     treatments=args.treatments)
+                    brains.poll_s = poll_seconds(args)
                     brains.start_all()
                     log(f"CIVVIS plays {_rows(civvis)}"
                         + (" and the test stub row 1" if stub else "")
@@ -3656,7 +3679,7 @@ def run_manual(args: argparse.Namespace) -> int:
                 break
             if brains is not None and monitor.stalled(args.stall_seconds):
                 manual_stall_note(monitor, log, now)
-            relay_for(bridges)
+            relay_for(bridges, read_s=relay_seconds(args))
     except Stop as stop:
         if stop_reason == "finished":
             stop_reason = f"stopped ({stop})"
@@ -3780,8 +3803,11 @@ def main(argv: list[str] | None = None) -> int:
                          "and yours) is pressed on its first frame instead of 0.3 s in. It "
                          "also has the CIVVIS seats look for their orders every 20 ms, which "
                          "the default `--genome live` already does (its mod arms' poll-20ms), "
-                         "so that part adds something only with `--genome stock`. Played in "
-                         "live games since 2026-11-28")
+                         "so that part adds something only with `--genome stock`. And each "
+                         "board reaches its seat's worker sooner: the game's log is relayed, "
+                         "and read by every worker, every 10 ms instead of 20 and 25, and "
+                         "the HUD offers the orders peek every 20 ms on average rather than "
+                         "every other frame. Played in live games since 2026-11-28")
     ap.add_argument("--fast-animations", nargs="?", type=float, const=FAST_ANIMATIONS,
                     default=None, metavar="N",
                     help="off by default: while the cover is up over the CIVVIS seats' turns "
@@ -4166,6 +4192,7 @@ def run(args: argparse.Namespace) -> int:
                              daemon=True).start()
         brains = Brains(run_dir, args.tag, seats, orders_db, binary,
                         seat_lanes(args, seats), log, treatments=args.treatments)
+        brains.poll_s = poll_seconds(args)
         workers_up = handed is None
         if workers_up:
             brains.start_all()
@@ -4238,7 +4265,7 @@ def run(args: argparse.Namespace) -> int:
                 log("⚠ " + not_started_advice(run_dir, args, waited_for_game - began_waiting))
             if monitor.stalled(args.stall_seconds):
                 rescue_popup(monitor, log)
-            relay_for(bridges)
+            relay_for(bridges, read_s=relay_seconds(args))
     except Stop as stop:
         stop_reason = f"stopped ({stop})"
         log(f"stopping: {stop}")

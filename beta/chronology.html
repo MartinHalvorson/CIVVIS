@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>Project Chronology · CIVVIS.ai</title>
+<meta name="description" content="The CIVVIS project's milestones along a timeline, from the first commit in July 2026: how well the AI plays Civilization VI against the game's own AI, how fast the simulator runs, the features added and the rest.">
+<link rel="canonical" href="https://civvis.ai/charts/project-chronology/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Tournaments page repeats them: the pages are one site and read as
+     one. Each is a single file with no shared stylesheet, so what they share
+     is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* The page's four categories (see `.chr-capability` below). */
+    --c-capability: #3987e5;
+    --c-performance: #d95926;
+    --c-features: #199e70;
+    --c-other: #93a3b5;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The site's pages stand in one row across the top of every page, over
+     the title and the project's links (operator, 2026-11-24: "try
+     putting the vertical menu from home... civ across the top
+     instad"); until then they were a column to the left of the title.
+     The row wraps onto a second line on a narrow screen, and every name
+     stands on one line (operator, 2026-11-21: "make sure it fits on one
+     line"). */
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-link {
+    display: block;
+    /* 8px a side, not 12, and 5px between, not 6: with CIVVIS in three of
+       the names (2026-11-26) the row is one line again on a desktop screen. */
+    padding: 3px 8px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    white-space: nowrap;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The pages are blue and so are their buttons: the rule
+     above. CIVVIS, the simulation itself at the lane's own address, is
+     gold (operator, 2026-11-26: "return civvis to a gold highlight"; gold
+     from 2026-11-24, white for a day from 2026-11-25), the gold the
+     simulator lights its own button in. AI Debugger, the simulator in play mode, keeps the
+     simulator's black, inside the edge its own buttons have. Civ 6 opens
+     Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
+     steam color of blue"), dark under the name and light at the far end. */
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="/debugger"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="/debugger"]:hover, .site-link[href$="/debugger"]:focus-visible { background: #181c1f; color: #fff; }
+  /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
+     add a green little bug to the end of ai debugger if theres space"). It
+     is drawn here rather than written in the link, so the link's name is
+     still "CIVVIS AI Debugger" to a screen reader and to whatever reads the list. */
+  .site-link[href$="/debugger"]::after {
+    content: ""; display: inline-block; width: 1.1em; height: 1.1em; margin-left: 0.3em; vertical-align: -0.22em;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  /* Edge of Tomorrow (operator, 2026-11-25: "above civ 6 and below ai
+     debugger add: Edge of Tomorrow"; above AI Debugger since 2026-11-26:
+     "lets move civvis: edge of tomorrow above civvis ai debugger in the
+     ordering"), the simulator played with a jump
+     back, stands out in the film's own colours (operator, 2026-11-25:
+     "also, highlight the edge of tomorrow button in the appropriate edge
+     of tomorrow colors. maybe like the movie poster vibe"). The poster's
+     look, read by this lane (the colours are its choice): the gunmetal of
+     the exosuits under a smoky slate sky running into the ember of the
+     burning beach, ringed in steel and lit by the fire, the name in the
+     title's silver-white. */
+  .site-link[href$="/edge-of-tomorrow"] {
+    background: linear-gradient(135deg, #1e2a33 35%, #b04a18); color: #eef2f5;
+    box-shadow: inset 0 0 0 1px #8fa3b5, 0 0 6px rgba(255, 120, 40, 0.5);
+  }
+  .site-link[href$="/edge-of-tomorrow"]:hover,
+  .site-link[href$="/edge-of-tomorrow"]:focus-visible {
+    background: linear-gradient(135deg, #2b3b47 35%, #c2541a); color: #fff;
+    box-shadow: inset 0 0 0 1px #b9c8d6, 0 0 10px rgba(255, 130, 50, 0.8);
+  }
+  /* CIVVIS: Moneyball (operator, 2026-11-27: "add CIVVIS: Moneyball. This
+     is a minigame where a user only looks at the stats and tries to play the
+     best game") stands out in a ballpark's colours, the film's: the outfield
+     grass under the lights running into a scoreboard's green, ringed in the
+     chalk of the base lines and lit by the floodlights, the name in chalk
+     white (the colours are this lane's choice). */
+  .site-link[href$="/moneyball"] {
+    background: linear-gradient(135deg, #123d27 35%, #2f8a4a); color: #f3f6ee;
+    box-shadow: inset 0 0 0 1px #cfe6c4, 0 0 6px rgba(150, 230, 140, 0.45);
+  }
+  .site-link[href$="/moneyball"]:hover,
+  .site-link[href$="/moneyball"]:focus-visible {
+    background: linear-gradient(135deg, #1a5034 35%, #38a057); color: #fff;
+    box-shadow: inset 0 0 0 1px #e6f4de, 0 0 10px rgba(170, 240, 150, 0.75);
+  }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="/doctor-strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="/doctor-strange"]:hover,
+  .site-link[href$="/doctor-strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* Charts/ is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22), and drops down like one (operator,
+     2026-11-24: "charts/ can drop down folder style and the user can
+     pick the right chart"): pointing at it, or tabbing to it, opens its
+     eight pages under it, and the reader picks one. Charts/ itself still
+     opens the folder's first page, AI Insights (operator, 2026-11-24:
+     "we want a new ai insights"). On
+     a touch screen the first tap opens the list (the script after the
+     row). A strip as tall as the gap over the list keeps it open on the
+     pointer's way down to it. */
+  .site-folder { position: relative; }
+  .site-folder > .site-link::after { content: "\25BE"; margin-left: 6px; letter-spacing: 0; }
+  .site-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    display: none; gap: 4px; width: max-content; min-width: 100%; padding: 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: var(--panel);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  }
+  .site-menu::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; height: 7px; }
+  .site-folder:hover > .site-menu,
+  .site-folder:focus-within > .site-menu,
+  .site-folder.is-open > .site-menu { display: grid; }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white. It was gold until 2026-11-24, when gold became CIVVIS's own;
+     CIVVIS is never the page on screen here. On a page of Charts/ the
+     folder is ringed as well, so the row says where the page is with the
+     list folded. */
+  .site-link[aria-current="page"],
+  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+  /* Project Chronology's own parts. A page whose slot still reads `null`
+     shows one sentence and nothing else. */
+  .chr-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .chr-record { display: grid; gap: 16px; min-width: 0; }
+  .chr-record[hidden], .chr-empty[hidden] { display: none; }
+
+  /* The four categories, one colour each, the same in the figures, the
+     timeline and the list. Three hues and a neutral: no four hues stay
+     apart for every common colour-vision type when any two may stand side
+     by side, as the list's rows do, so the fourth category, Other, wears
+     the page's grey and the three that are the subject wear the hues.
+     Checked as a set against this panel (#1f2733) with every pair counted:
+     each at least 3:1 on it, the three hues apart for protan, deutan and
+     tritan readers. A colour never stands alone: a timeline row is named
+     at its left, and a list row and a figure name their category in words. */
+  .chr-capability { --c: var(--c-capability); }
+  .chr-performance { --c: var(--c-performance); }
+  .chr-features { --c: var(--c-features); }
+  .chr-other { --c: var(--c-other); }
+  .chr-swatch { display: inline-block; width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--c, var(--c-other)); }
+
+  /* The progress row: a figure a tile, the reading now over the reading
+     it is set against. Four across, and two by two on a tablet or a phone,
+     so the timeline under it is not a screen away. */
+  .chr-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .chr-tiles:empty { display: none; }
+  @media (max-width: 899px) { .chr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 479px) {
+    .chr-tiles { gap: 8px; }
+    .chr-tile { padding: 10px 11px 9px; }
+    .chr-tile-now { font-size: 21px; }
+  }
+  .chr-tile { min-width: 0; padding: 12px 14px 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .chr-tile-label { display: flex; align-items: baseline; gap: 7px; margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+  .chr-tile-now { margin: 5px 0 0; color: #fff; font-size: 26px; font-weight: 700; line-height: 1.15; }
+  .chr-tile-was { margin: 3px 0 0; color: var(--text); font-size: 13px; }
+  .chr-tile-span { margin: 2px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.4; }
+
+  /* One row of switches over everything they scope: the category, and the
+     order the list reads in. */
+  .chr-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 18px; }
+  .chr-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chr-seg button {
+    display: inline-flex; align-items: center; gap: 7px;
+    min-height: 36px; padding: 5px 11px;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: transparent; color: var(--muted);
+    font: 600 12.5px var(--sans); cursor: pointer;
+  }
+  .chr-seg button:hover { background: var(--panel-raised); color: #fff; }
+  .chr-seg button[aria-pressed="true"] { border-color: var(--border-strong); background: var(--panel-raised); color: #fff; }
+  .chr-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chr-seg .chr-n { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  .chr-card { min-width: 0; padding: 16px 18px 14px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .chr-card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .chr-counted { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+  /* The timeline: a row a category, a dot a milestone, time left to right.
+     Dots that would meet stand one over the other. A dot wears a ring of the
+     panel so two that touch read as two, and takes a white ring when it is
+     pointed at or tabbed to. The few major milestones are named on the
+     chart; every other name is in the list under it and in the dot's tip. */
+  .chr-plot { position: relative; margin-top: 12px; }
+  .chr-plot svg { display: block; overflow: visible; }
+  .chr-grid line, .chr-rule { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+  .chr-tick { fill: var(--muted); font: 11px var(--sans); }
+  .chr-lane-name { fill: var(--text); font: 600 12.5px var(--sans); }
+  .chr-lane-count { fill: var(--faint); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
+  .chr-dot { fill: var(--c, var(--c-other)); stroke: var(--panel); stroke-width: 2; }
+  .chr-hit { fill: transparent; }
+  .chr-mark { cursor: pointer; outline: none; }
+  .chr-mark:hover .chr-dot, .chr-mark:focus-visible .chr-dot, .chr-mark.is-on .chr-dot { stroke: #fff; }
+  .chr-leader { stroke: var(--border-strong); stroke-width: 1; }
+  .chr-label { fill: #fff; font: 600 11.5px var(--sans); }
+  .chr-tip {
+    position: absolute; z-index: 5; width: max-content; max-width: min(270px, 100%);
+    padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 4px;
+    background: #11161d; color: var(--text); font-size: 12.5px; line-height: 1.4;
+    pointer-events: none; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  }
+  .chr-tip[hidden] { display: none; }
+  .chr-tip-title { margin: 0; color: #fff; font-weight: 700; }
+  .chr-tip-meta { display: flex; align-items: baseline; gap: 6px; margin: 3px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* The list: every milestone in words, a month a heading. It is the
+     timeline's table, so nothing is read only off a dot. */
+  .chr-month { margin: 16px 0 0; padding-bottom: 6px; color: var(--gold); font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+  .chr-list { margin: 0; padding: 0; list-style: none; }
+  .chr-item { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 2px 14px; padding: 10px 0; border-top: 1px solid var(--border); scroll-margin-top: 14px; }
+  .chr-item:target { margin: 0 -10px; padding: 10px; border-radius: 4px; background: var(--panel-raised); }
+  .chr-item-date { padding-top: 2px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chr-item-body { min-width: 0; }
+  .chr-item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 12px; }
+  .chr-item-title { margin: 0; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.35; }
+  .chr-chip { display: inline-flex; align-items: baseline; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .chr-item-detail { max-width: 760px; margin: 3px 0 0; color: var(--text); font-size: 14px; line-height: 1.5; }
+  .chr-item-sources { margin: 4px 0 0; color: var(--faint); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+  .chr-item-sources a { color: var(--accent); }
+  @media (max-width: 479px) { .chr-item { grid-template-columns: minmax(0, 1fr); } }
+  .chr-note { max-width: 860px; margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12px; line-height: 1.55; }
+  .chr-note a { color: var(--accent); }
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <!-- The site's pages, in the order every one of them lists them, in one
+         row across the top of the page (operator, 2026-11-24: "try putting
+         the vertical menu from home... civ across the top instad"), where
+         until then they stood in a column to the left of the title. Charts/
+         is a folder and drops down like one to its eight pages ("charts/ can
+         drop down folder style and the user can pick the right chart"). The
+         page on screen is ringed in white: this is Project Chronology, the
+         last page under Charts/ (operator, 2026-11-28: "add a project
+         chronology to charts/ at the end for now"), so Charts/ is ringed too
+         and so is this page in its list. Every link is lane-relative (this
+         page lives at <lane>/charts/project-chronology/), so the test lane's page opens the
+         test lane's other pages and viewer. -->
+    <nav class="site-nav" aria-label="CIVVIS sites">
+      <a class="site-link" href="../../home/">Home</a>
+      <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
+      <div class="site-folder">
+        <a class="site-link" href="../ai-insights/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <div class="site-menu">
+          <a class="site-link sub-link" href="../ai-insights/" title="What the games show about AI at large: smarter AI picks up speed.">AI Insights</a>
+          <a class="site-link sub-link" href="../civ-ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>
+          <a class="site-link sub-link" href="../civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
+          <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+          <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
+          <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+          <a class="site-link sub-link" href="../unreviewed-gen-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>
+          <a class="site-link sub-link" href="./" aria-current="page">Project Chronology</a>
+        </div>
+      </div>
+      <a class="site-link" href="../../moneyball" title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>
+      <a class="site-link" href="../../doctor-strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
+      <a class="site-link" href="../../edge-of-tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
+      <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+      <a class="site-link" href="../../debugger" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
+      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+    </nav>
+    <script data-site-folder>
+    // Charts/ on a touch screen, where nothing points at it: the first tap
+    // drops its list down and a second opens the folder's first page, as
+    // /charts/ does. A tap anywhere else folds the list away.
+    (() => {
+      const folder = document.querySelector(".site-folder");
+      if (!folder) return;
+      folder.firstElementChild.addEventListener("click", (event) => {
+        if (matchMedia("(hover: hover)").matches || folder.classList.contains("is-open")) return;
+        event.preventDefault();
+        folder.classList.add("is-open");
+      });
+      document.addEventListener("click", (event) => {
+        if (!folder.contains(event.target)) folder.classList.remove("is-open");
+      });
+      folder.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        folder.classList.remove("is-open");
+        document.activeElement.blur();
+      });
+    })();
+    </script>
+    <div class="site-brand">
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for fixing the Civ AI</span> <span>(fan project, open source, free)</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        <span>GitHub <small>Everything open source, free</small></span>
+      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+  <main class="shell">
+    <!-- One line, as every page of the site opens (operator, 2026-11-24:
+         "there is too much text on pages ... should be a more visual
+         experience. some text ok. just not too much"). -->
+    <p class="intro">
+      The project&#8217;s milestones along a timeline, from the first commit to today: how well the AI plays <cite>Civilization VI</cite>, how fast the simulator runs, and what was built.
+    </p>
+
+    <!-- The record. `beta/publish.sh` fills the slot below, the
+         `chronology-data` slot (`beta/chronology_page.py`), with the
+         milestones kept in `data/chronology.json`. A page whose slot still
+         reads `null` (this file opened as it is committed, or a build whose
+         file was out of shape) shows the one sentence. -->
+    <p class="chr-empty" id="chr-empty">This copy of the page has no milestones. They are written in when the site is published.</p>
+    <div class="chr-record" id="chr-record" hidden>
+      <!-- "show the progress we've made": a row of figures, each the reading
+           now over the reading it is set against, and the days of both. -->
+      <ul class="chr-tiles" id="chr-tiles" aria-label="Progress: where it stands now, and where it stood"></ul>
+
+      <!-- One row of switches, over the timeline and the list they scope.
+           The categories are the four the operator named ("ai capability,
+           simulator performance, new features, other"), in his order. -->
+      <div class="chr-filters">
+        <div class="chr-seg" id="chr-cats" role="group" aria-label="Show a category"></div>
+        <div class="chr-seg" id="chr-order" role="group" aria-label="Order of the list">
+          <button type="button" data-order="oldest" aria-pressed="true">Oldest first</button>
+          <button type="button" data-order="newest" aria-pressed="false">Newest first</button>
+        </div>
+      </div>
+
+      <!-- "post the important milestones along a timeline": a row a
+           category, a dot a milestone. -->
+      <section class="chr-card" aria-labelledby="chr-chart-title">
+        <h2 class="chr-card-title" id="chr-chart-title">Milestones along the timeline</h2>
+        <p class="chr-counted" id="chr-counted"></p>
+        <div class="chr-plot" id="chr-plot">
+          <svg id="chr-svg" role="group" aria-labelledby="chr-chart-title"></svg>
+          <div class="chr-tip" id="chr-tip" role="presentation" hidden></div>
+        </div>
+      </section>
+
+      <section class="chr-card" aria-labelledby="chr-list-title">
+        <h2 class="chr-card-title" id="chr-list-title">Every milestone</h2>
+        <div id="chr-months"></div>
+        <p class="chr-note" id="chr-note">
+          Days are UTC. A game is named by its tag, its line of <code>results.jsonl</code> on the <a href="https://github.com/MartinHalvorson/CIVVIS/tree/ledger" target="_blank" rel="noreferrer">ledger branch</a>.
+          <span id="chr-checked"></span>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <script type="application/json" id="chronology-data">null</script>
+  <script>
+  // The page, drawn from the slot. Every title, sentence and name arrives
+  // through textContent or an SVG attribute: the slot holds data, never
+  // markup. An address is put into an href only when it is https.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("chronology-data").textContent); } catch (error) { data = null; }
+    if (!data || !Array.isArray(data.milestones) || !data.milestones.length || !Array.isArray(data.categories)) return;
+
+    const SVG = "http://www.w3.org/2000/svg";
+    const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const el = (name, cls, text) => {
+      const node = document.createElement(name);
+      if (cls) node.className = cls;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+    const svg = (name, attrs) => {
+      const node = document.createElementNS(SVG, name);
+      for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+      return node;
+    };
+    // A `YYYY-MM-DD` day as UTC milliseconds, and as the list words it.
+    const stamp = day => Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10));
+    const short = day => `${MONTHS[+day.slice(5, 7) - 1].slice(0, 3)} ${+day.slice(8, 10)}`;
+    const month = day => `${MONTHS[+day.slice(5, 7) - 1]} ${day.slice(0, 4)}`;
+
+    const categories = data.categories.filter(category => category && typeof category.key === "string" && /^[a-z]+$/.test(category.key));
+    const named = new Map(categories.map(category => [category.key, category]));
+    const milestones = data.milestones
+      .map((milestone, at) => ({ ...milestone, at }))
+      .filter(milestone => named.has(milestone.category) && /^\d{4}-\d{2}-\d{2}$/.test(milestone.date));
+    if (!milestones.length) return;
+
+    const state = { category: "all", order: "oldest" };
+    const shown = () => milestones.filter(milestone => state.category === "all" || milestone.category === state.category);
+    const swatch = key => el("span", `chr-swatch chr-${key}`);
+
+    // ---- The progress row.
+    const tiles = document.getElementById("chr-tiles");
+    for (const figure of Array.isArray(data.progress) ? data.progress : []) {
+      if (!named.has(figure.category)) continue;
+      const tile = el("li", "chr-tile");
+      const label = el("p", "chr-tile-label");
+      label.append(swatch(figure.category), el("span", "", figure.label));
+      tile.append(label, el("p", "chr-tile-now", figure.now), el("p", "chr-tile-was", `from ${figure.was}`), el("p", "chr-tile-span", figure.span));
+      tile.title = named.get(figure.category).name;
+      tiles.append(tile);
+    }
+
+    // ---- The switches.
+    const cats = document.getElementById("chr-cats");
+    const pick = (key, name, count) => {
+      const button = el("button");
+      button.type = "button";
+      button.dataset.category = key;
+      button.setAttribute("aria-pressed", String(key === state.category));
+      if (key !== "all") button.append(swatch(key));
+      button.append(el("span", "", name), el("span", "chr-n", String(count)));
+      if (key !== "all") button.title = named.get(key).says;
+      cats.append(button);
+    };
+    pick("all", "All", milestones.length);
+    for (const category of categories) pick(category.key, category.name, milestones.filter(milestone => milestone.category === category.key).length);
+    cats.addEventListener("click", event => {
+      const button = event.target.closest("button[data-category]");
+      if (!button) return;
+      state.category = button.dataset.category;
+      for (const other of cats.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button));
+      draw();
+    });
+    const order = document.getElementById("chr-order");
+    order.addEventListener("click", event => {
+      const button = event.target.closest("button[data-order]");
+      if (!button) return;
+      state.order = button.dataset.order;
+      for (const other of order.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button));
+      list();
+    });
+
+    // ---- The timeline.
+    const plot = document.getElementById("chr-plot");
+    const chart = document.getElementById("chr-svg");
+    const tip = document.getElementById("chr-tip");
+    const DAY = 86400000;
+    const R = 5, BIG = 7, STEP = 12;
+    let width = 0;
+
+    function timeline() {
+      const rows = shown();
+      const W = Math.max(280, Math.floor(plot.clientWidth));
+      width = W;
+      const wide = W >= 640;
+      const gutter = wide ? 176 : 0;
+      const left = gutter + 10, right = W - 12;
+      const t0 = stamp(data.from) - 2 * DAY, t1 = stamp(data.to) + 2 * DAY;
+      const x = day => left + (stamp(day) - t0) / (t1 - t0) * (right - left);
+      chart.textContent = "";
+      hide();
+
+      const lanes = categories
+        .filter(category => state.category === "all" || category.key === state.category)
+        .map(category => {
+          // A lane's dots, oldest first, each on the lowest row where it
+          // meets no dot already there. A major one goes last and over
+          // every dot near it, so the line from its name crosses nothing.
+          const mine = rows.filter(milestone => milestone.category === category.key);
+          const placed = [];
+          const near = (cx, r) => placed.filter(dot => Math.abs(dot.cx - cx) < dot.r + r + 2);
+          for (const milestone of mine.filter(milestone => !milestone.major)) {
+            const cx = x(milestone.date);
+            const taken = new Set(near(cx, R).map(dot => dot.row));
+            let row = 0;
+            while (taken.has(row)) row += 1;
+            placed.push({ milestone, cx, r: R, row });
+          }
+          for (const milestone of mine.filter(milestone => milestone.major)) {
+            const cx = x(milestone.date);
+            const under = near(cx, BIG);
+            placed.push({ milestone, cx, r: BIG, row: under.length ? Math.max(...under.map(dot => dot.row)) + 1 : 0 });
+          }
+          return { category, placed, rows: Math.max(1, ...placed.map(dot => dot.row + 1)), named: placed.some(dot => dot.milestone.major) };
+        });
+
+      let y = 0;
+      const grid = svg("g", { class: "chr-grid" });
+      chart.append(grid);
+      for (const lane of lanes) {
+        const top = y;
+        const head = wide ? 0 : 20;
+        const band = lane.named ? 20 : 8;
+        const bottom = top + head + band + lane.rows * STEP + 8;
+        const count = `${lane.placed.length}`;
+        if (wide) {
+          const name = svg("text", { class: "chr-lane-name", x: 0, y: (top + bottom) / 2 + 4 });
+          name.textContent = lane.category.name;
+          const n = svg("text", { class: "chr-lane-count", x: gutter - 8, y: (top + bottom) / 2 + 4, "text-anchor": "end" });
+          n.textContent = count;
+          chart.append(name, n);
+        } else {
+          const name = svg("text", { class: "chr-lane-name", x: 0, y: top + 14 });
+          name.textContent = `${lane.category.name} · ${count}`;
+          chart.append(name);
+        }
+        chart.append(svg("line", { class: "chr-rule", x1: 0, x2: W, y1: bottom + 0.5, y2: bottom + 0.5 }));
+        const base = bottom - 8 - R;
+        for (const dot of lane.placed) dot.cy = base - dot.row * STEP;
+        // Names first, so a dot is drawn over a line that ends on it.
+        for (const dot of lane.placed.filter(dot => dot.milestone.major && dot.milestone.label)) {
+          const anchor = dot.cx < left + (right - left) * 0.3 ? "start" : dot.cx > left + (right - left) * 0.7 ? "end" : "middle";
+          const lx = anchor === "start" ? dot.cx - BIG : anchor === "end" ? dot.cx + BIG : dot.cx;
+          const ly = top + head + 12;
+          chart.append(svg("line", { class: "chr-leader", x1: dot.cx, x2: dot.cx, y1: ly + 4, y2: dot.cy - dot.r - 1 }));
+          const label = svg("text", { class: "chr-label", x: lx, y: ly, "text-anchor": anchor });
+          label.textContent = dot.milestone.label;
+          chart.append(label);
+        }
+        for (const dot of lane.placed) {
+          const { milestone } = dot;
+          const mark = svg("a", { class: `chr-mark chr-${milestone.category}`, href: `#chr-m-${milestone.at}` });
+          mark.setAttribute("aria-label", `${milestone.date}, ${lane.category.name}: ${milestone.title}`);
+          mark.append(
+            svg("circle", { class: "chr-hit", cx: dot.cx, cy: dot.cy, r: 12 }),
+            svg("circle", { class: "chr-dot", cx: dot.cx, cy: dot.cy, r: dot.r }),
+          );
+          const say = () => show(mark, dot, lane.category);
+          mark.addEventListener("pointerenter", say);
+          mark.addEventListener("focus", say);
+          mark.addEventListener("pointerleave", hide);
+          mark.addEventListener("blur", hide);
+          chart.append(mark);
+        }
+        y = bottom + 1;
+      }
+      // The months: a faint rule down every row at each month's first day,
+      // named once, under the last row. The first day is named too, where
+      // the first month's rule leaves its name room.
+      const to = new Date(t1);
+      let firstRule = null;
+      for (let at = new Date(Date.UTC(new Date(t0).getUTCFullYear(), new Date(t0).getUTCMonth() + 1, 1));
+        at.getTime() <= to.getTime();
+        at = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1))) {
+        const gx = Math.round(left + (at.getTime() - t0) / (t1 - t0) * (right - left)) + 0.5;
+        if (firstRule === null) firstRule = gx;
+        grid.append(svg("line", { x1: gx, x2: gx, y1: 0, y2: y }));
+        const tick = svg("text", { class: "chr-tick", x: gx + 4, y: y + 14 });
+        tick.textContent = MONTHS[at.getUTCMonth()].slice(0, 3) + (at.getUTCMonth() === 0 ? ` ${at.getUTCFullYear()}` : "");
+        chart.append(tick);
+      }
+      if (firstRule === null || firstRule - left >= 70) {
+        const start = svg("text", { class: "chr-tick", x: left, y: y + 14 });
+        start.textContent = `${short(data.from)}, ${data.from.slice(0, 4)}`;
+        chart.append(start);
+      }
+      const H = y + 20;
+      chart.setAttribute("width", W);
+      chart.setAttribute("height", H);
+      chart.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    }
+
+    function show(mark, dot, category) {
+      for (const other of chart.querySelectorAll(".chr-mark.is-on")) other.classList.remove("is-on");
+      mark.classList.add("is-on");
+      tip.textContent = "";
+      const meta = el("p", "chr-tip-meta");
+      meta.append(swatch(category.key), el("span", "", `${dot.milestone.date} · ${category.name}`));
+      tip.append(el("p", "chr-tip-title", dot.milestone.title), meta);
+      tip.hidden = false;
+      const w = tip.offsetWidth, h = tip.offsetHeight;
+      const leftAt = Math.max(0, Math.min(width - w, dot.cx - w / 2));
+      const above = dot.cy - dot.r - 8 - h;
+      tip.style.left = `${leftAt}px`;
+      tip.style.top = `${above >= -40 ? above : dot.cy + dot.r + 8}px`;
+    }
+    function hide() {
+      tip.hidden = true;
+      for (const other of chart.querySelectorAll(".chr-mark.is-on")) other.classList.remove("is-on");
+    }
+
+    // ---- The list.
+    const months = document.getElementById("chr-months");
+    function list() {
+      months.textContent = "";
+      const rows = shown().slice();
+      if (state.order === "newest") rows.reverse();
+      let heading = "", into = null;
+      for (const milestone of rows) {
+        const category = named.get(milestone.category);
+        if (month(milestone.date) !== heading) {
+          heading = month(milestone.date);
+          months.append(el("h3", "chr-month", heading));
+          into = el("ol", "chr-list");
+          months.append(into);
+        }
+        const item = el("li", "chr-item");
+        item.id = `chr-m-${milestone.at}`;
+        const when = el("time", "chr-item-date", short(milestone.date));
+        when.dateTime = milestone.date;
+        const body = el("div", "chr-item-body");
+        const head = el("div", "chr-item-head");
+        const chip = el("span", "chr-chip");
+        chip.append(swatch(category.key), el("span", "", category.name));
+        head.append(el("h4", "chr-item-title", milestone.title), chip);
+        body.append(head, el("p", "chr-item-detail", milestone.detail));
+        const sources = el("p", "chr-item-sources");
+        (Array.isArray(milestone.sources) ? milestone.sources : []).forEach((source, at) => {
+          sources.append(at ? " · " : "Source: ");
+          if (typeof source.href === "string" && source.href.startsWith("https://")) {
+            const link = el("a", "", source.label);
+            link.href = source.href;
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            sources.append(link);
+          } else {
+            sources.append(el("span", "", source.label));
+          }
+        });
+        if (sources.childNodes.length) body.append(sources);
+        item.append(when, body);
+        into.append(item);
+      }
+    }
+
+    function said() {
+      const rows = shown();
+      const counted = document.getElementById("chr-counted");
+      const span = `${data.from} to ${data.to}`;
+      counted.textContent = state.category === "all"
+        ? `${rows.length} milestones in ${data.days} days, ${span}.`
+        : `${rows.length} of ${milestones.length} milestones: ${named.get(state.category).name}. ${named.get(state.category).says}`;
+    }
+    function draw() {
+      said();
+      timeline();
+      list();
+    }
+
+    if (typeof data.checked === "string") document.getElementById("chr-checked").textContent = data.checked.replace(/`/g, "");
+    document.getElementById("chr-empty").hidden = true;
+    document.getElementById("chr-record").hidden = false;
+    draw();
+    // The timeline is drawn to the width it has, so it is drawn again when
+    // that changes; the list reflows by itself.
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(() => {
+        if (Math.floor(plot.clientWidth) !== width) timeline();
+      }).observe(plot);
+    }
+    // A link straight to a milestone lands on it once the list is built.
+    if (/^#chr-m-\d+$/.test(location.hash)) {
+      const target = document.getElementById(location.hash.slice(1));
+      if (target) target.scrollIntoView();
+    }
+  })();
+  </script>
+</body>
+</html>

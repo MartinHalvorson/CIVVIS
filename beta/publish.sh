@@ -187,6 +187,7 @@ performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
 insights_page="$source_tree/beta/insights.html"
 random_page="$source_tree/beta/random.html"
+chronology_page="$source_tree/beta/chronology.html"
 pages=()
 without=()
 
@@ -241,6 +242,8 @@ interpretability_at="$(address "$interpretability_page" interpretability)"
 insights_at="$(address "$insights_page" charts/ai-insights)"
 # Unreviewed Gen AI Charts likewise: written on 2026-11-26, with its address stated.
 random_at="$(address "$random_page" charts/unreviewed-gen-ai-charts)"
+# Project Chronology likewise: written on 2026-11-28, with its address stated.
+chronology_at="$(address "$chronology_page" charts/project-chronology)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -434,6 +437,22 @@ if [ -f "$random_page" ]; then
   pages+=("$random_at")
 else
   without+=(unreviewed-gen-ai-charts)
+fi
+# Project Chronology, the last page under Charts/ (operator 2026-11-28: "add
+# a project chronology to charts/ at the end for now. post the important
+# milestones along a timeline. show the progress we've made. ai capability,
+# simulator performance, new features, other"). Its milestones are a file
+# somebody keeps, `data/chronology.json`, read from the lane's own revision
+# and written into the page's slot (`beta/chronology_page.py`): nothing is
+# read off the ledger, so the page is the same on every publish of a
+# revision. A revision without the page is published without it.
+if [ -f "$chronology_page" ]; then
+  mkdir -p "$out/$chronology_at"
+  cp "$chronology_page" "$out/$chronology_at/index.html"
+  fill chronology_page.py "$out/$chronology_at/index.html"
+  pages+=("$chronology_at")
+else
+  without+=(project-chronology)
 fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.

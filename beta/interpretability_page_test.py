@@ -402,6 +402,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
                 ("site-link sub-link", "../unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
+                ("site-link sub-link", "../project-chronology/", "Project Chronology"),
                 ("site-link", "../../moneyball", "CIVVIS: Moneyball"),
                 ("site-link", "../../doctor-strange", "Doctor Strange's CIVVIS"),
                 ("site-link", "../../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),

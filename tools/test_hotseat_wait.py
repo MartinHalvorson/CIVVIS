@@ -488,6 +488,34 @@ class TimescaleTest(unittest.TestCase):
             audit = hotseat_wait.timescale_audit(hotseat_wait.Run(scaled(Path(fast), person_scale=3)))
         self.assertEqual(audit["person_over_limit"], 1)
         self.assertAlmostEqual(audit["person_ratio_max"], 3.0, places=2)
+        self.assertAlmostEqual(audit["person_ratio_all"], 3.0, places=2)
+
+    def test_short_turns_are_read_together(self) -> None:
+        # The stand-in's turns: a tenth of a second each, none long enough to
+        # read alone, all of them summed.
+        def short(person_scale: float) -> dict:
+            with tempfile.TemporaryDirectory() as fast:
+                root = scaled(Path(fast))
+                rows = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+                rows = [row for row in rows if row.get("reason") != "turn_end"]
+                at, wall = 50.0, OFFSET + 3000
+                for _ in range(12):
+                    rows.append({"kind": "hotseat_cover", "ctx": "cover", "up": False,
+                                 "reason": "person_start", "player": 0, "turn": 30, "at": at,
+                                 "relay_utc": stamp(wall)})
+                    rows.append({"kind": "hotseat_cover", "ctx": "cover", "up": True,
+                                 "reason": "turn_end", "player": 0, "turn": 30,
+                                 "at": at + 0.12 * person_scale, "relay_utc": stamp(wall + 0.12)})
+                    at, wall = at + 8.0, wall + 8.0
+                (root / "events.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+                return hotseat_wait.timescale_audit(hotseat_wait.Run(root))
+        calm = short(1.0)
+        self.assertEqual((calm["person_turns"], calm["person_turns_all"]), (0, 12))
+        self.assertAlmostEqual(calm["person_ratio_all"], 1.0, places=2)
+        self.assertLessEqual(calm["person_ratio_all"], hotseat_wait.PERSON_ALL_LIMIT)
+        fast = short(3.0)
+        self.assertGreater(fast["person_ratio_all"], hotseat_wait.PERSON_ALL_LIMIT)
+        self.assertIn("all 12 person's turns together", hotseat_wait.audit_report(fast))
 
     def test_what_must_never_appear_is_counted(self) -> None:
         with tempfile.TemporaryDirectory() as fast:

@@ -440,6 +440,11 @@ def span(a: float | None, b: float | None) -> float | None:
 PERSON_RATIO_LIMIT = 1.15
 #: ...measured only over turns at least this long (wall seconds).
 PERSON_SPAN_MIN_S = 2.0
+#: Every person's turn summed: at 1x the owner's 33 turns read 1.00, the test
+#: stand-in's 0.1-0.5 s turns 1.10 and 1.14 (live-6p-20261128T0446Zd and
+#: ...0614Ze: the relay's stamps weigh on spans that short); a turn at 2x or
+#: 3x reads about 2 or 3.
+PERSON_ALL_LIMIT = 1.5
 
 
 def timescale_audit(run: Run) -> dict | None:
@@ -501,7 +506,15 @@ def timescale_audit(run: Run) -> dict | None:
         elif row.get("up") is True and row.get("reason") == "turn_end":
             marks.append(("raise", raw, wall))
     person, covered = [], []
+    # ...and every person's turn together: the test stand-in's last 0.1-0.5 s
+    # each (live-6p-20261128T0614Ze), too short to read one by one against
+    # the relay's stamps, but a game's worth of them sums to seconds.
+    together = [0.0, 0.0, 0]
     for (a, ui_a, wall_a), (b, ui_b, wall_b) in zip(marks, marks[1:]):
+        if a == "lift" and b == "raise" and wall_b > wall_a:
+            together[0] += ui_b - ui_a
+            together[1] += wall_b - wall_a
+            together[2] += 1
         if wall_b - wall_a < PERSON_SPAN_MIN_S:
             continue
         ratio = (ui_b - ui_a) / (wall_b - wall_a)
@@ -512,6 +525,9 @@ def timescale_audit(run: Run) -> dict | None:
     out["person_turns"] = len(person)
     out["person_ratio_max"] = max(person) if person else None
     out["person_over_limit"] = sum(1 for ratio in person if ratio > PERSON_RATIO_LIMIT)
+    out["person_turns_all"] = together[2]
+    out["person_wall_s"] = together[1]
+    out["person_ratio_all"] = together[0] / together[1] if together[1] > 0 else None
     out["covered_ratio_median"] = median(covered)
     return out
 
@@ -523,6 +539,7 @@ def audit_report(audit: dict | None) -> str:
         return ", ".join(f"{key} {value}" for key, value in sorted(table.items())) or "none"
     ratio = audit["person_ratio_max"]
     covered = audit["covered_ratio_median"]
+    together = audit["person_ratio_all"]
     return "\n".join([
         "", "",
         f"timescale (--fast-animations {audit['want']}): switched on {audit['on']} times; "
@@ -535,6 +552,9 @@ def audit_report(audit: dict | None) -> str:
         f"  person's turns: {audit['person_turns']} of {PERSON_SPAN_MIN_S:.0f} s or more, UI clock / "
         f"wall at most {'-' if ratio is None else f'{ratio:.2f}'}; over {PERSON_RATIO_LIMIT}: "
         f"{audit['person_over_limit']} (MUST BE 0)",
+        f"  all {audit['person_turns_all']} person's turns together ({audit['person_wall_s']:.1f} s): "
+        f"UI clock / wall {'-' if together is None else f'{together:.2f}'} (MUST BE AT MOST "
+        f"{PERSON_ALL_LIMIT})",
     ])
 
 
