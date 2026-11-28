@@ -85,6 +85,8 @@ mod governor_exchange;
 mod great_works_never_wait;
 #[path = "civvis_orders/host_ledgers.rs"]
 mod host_ledgers;
+#[path = "civvis_orders/hotseat_deals.rs"]
+mod hotseat_deals;
 #[path = "civvis_orders/host_move_audit.rs"]
 mod host_move_audit;
 #[path = "civvis_orders/host_move_postconditions.rs"]
@@ -6395,6 +6397,13 @@ fn decide(
                 note_bits.push("culture_work_buy=1".to_string());
             }
         }
+    }
+    // `own-price-answers-the-deal`: every deal waiting for this seat at a
+    // hotseat table, answered by its own price. See `hotseat_deals`.
+    if ai.own_price_answers_the_deal_enabled() {
+        let (answers, notes) = hotseat_deals::answer_orders(state, ai.victory_target());
+        orders.extend(answers);
+        note_bits.extend(notes);
     }
     let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
     if session_conflicts > 0 {

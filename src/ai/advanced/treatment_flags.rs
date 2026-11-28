@@ -489,6 +489,10 @@ impl AdvancedAi {
         /// Opt-in gene `one-replan-per-turn`: a turn re-opens for a fresh
         /// plan at most once; see `ai::player::take_turn`.
         one_replan_per_turn => enable_one_replan_per_turn, disable_one_replan_per_turn;
+        /// Opt-in gene `own-price-answers-the-deal`: a hotseat seat answers a
+        /// deal proposed to it by its own price (accept, counter, reject); see
+        /// `advanced/own_price_answers_the_deal.rs`.
+        own_price_answers_the_deal => enable_own_price_answers_the_deal, disable_own_price_answers_the_deal;
         // ---- append: p-r --------------------------------------------
         /// Opt-in gene `racer-seat-statue-civic-first`; see
         /// `AdvancedAi::diplo_statue_civic_goal`.

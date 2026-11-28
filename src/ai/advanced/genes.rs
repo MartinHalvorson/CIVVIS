@@ -6244,6 +6244,15 @@ pub const GENES: &[Gene] = &[
     // Warrior with a defender already home; all four Prophets went and no
     // religion was founded. Opt-in; see `ai/barbarians.rs`.
     Gene { tag: "opening-defense-spares-the-holy-site", field: "opening_defense_spares_the_holy_site", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_defense_spares_the_holy_site, disable: AdvancedAi::disable_opening_defense_spares_the_holy_site },
+    // Hotseat 2026-11-27/28 (`hotseat-20261128T031456Z`,
+    // `hotseat-20261128T045523Z`): every major at the table is a human seat,
+    // no CIVVIS seat ever looked at a deal proposed to it (the person's
+    // proposals to seats 4 and 1 sat unanswered from turn 12 and 17), and
+    // the Firaxis price ask (EQUALIZE) gets no answer from a human. A seat
+    // answers each deal on the board by its own price: accept, counter with
+    // the smallest change worth it, or reject. Opt-in, hotseat only (it reads
+    // the `deals` board); see `advanced/own_price_answers_the_deal.rs`.
+    Gene { tag: "own-price-answers-the-deal", field: "own_price_answers_the_deal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_price_answers_the_deal, disable: AdvancedAi::disable_own_price_answers_the_deal },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as
