@@ -1603,6 +1603,12 @@ impl AdvancedAi {
                 if !home || self.base.camp_is_a_neighbours_problem(g, pid, *camp) {
                     continue;
                 }
+                // `camp-stall-goes-home`: a party that stood beside this camp
+                // three turns without a blow has gone home for ten. `false`
+                // with the gene off. See `advanced/camp_stall_goes_home.rs`.
+                if self.camp_stall_closes_the_row(g, *camp) {
+                    continue;
+                }
                 let guard = g
                     .unit_ids_at(*camp)
                     .iter()
@@ -4466,3 +4472,6 @@ mod capital_defender_tests;
 
 #[cfg(test)]
 mod early_city_last_melee_tests;
+
+#[cfg(test)]
+mod camp_stall_tests;

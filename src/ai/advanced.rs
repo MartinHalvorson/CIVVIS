@@ -7141,6 +7141,14 @@ pub struct AdvancedAi {
     /// the verdict holds. Written by `maintain_city_campaign`, read by the
     /// Objective Board's Siege rows. Empty while the gene is off.
     campaign_war_no_go: BTreeMap<usize, u32>,
+    /// `camp-stall-goes-home`: a ClearCamp party that stands beside a guarded
+    /// camp three turns without a blow closes the row for ten, and sites
+    /// beside that camp lose value. See `advanced/camp_stall_goes_home.rs`.
+    /// Off by default.
+    camp_stall_goes_home: bool,
+    /// `camp-stall-goes-home`: each camp's contact and struck turns and the
+    /// turn its closed row reopens. Empty with the gene off.
+    camp_stalls: BTreeMap<Pos, camp_stall_goes_home::CampStall>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -12777,6 +12785,8 @@ pub use gene_ledger::{
 /// more than the plot's quote. One opt-in gene; see
 /// `advanced/camp_buyout.rs`.
 mod camp_buyout;
+/// `camp-stall-goes-home`: see `advanced/camp_stall_goes_home.rs`.
+mod camp_stall_goes_home;
 
 /// `camps-close-the-age`: ClearCamp rows close a first-era Age gap. One
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.

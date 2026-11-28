@@ -349,6 +349,10 @@ impl AdvancedAi {
         /// Opt-in gene `culture-trade-district-follows-the-theater`; see
         /// `advanced/trade_district_follows_the_campus.rs`.
         culture_trade_district_follows_the_theater => enable_culture_trade_district_follows_the_theater, disable_culture_trade_district_follows_the_theater;
+        /// Opt-in gene `camp-stall-goes-home`: a ClearCamp party that strikes
+        /// no blow for three turns goes home for ten; see
+        /// `advanced/camp_stall_goes_home.rs`.
+        camp_stall_goes_home => enable_camp_stall_goes_home, disable_camp_stall_goes_home;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
