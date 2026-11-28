@@ -11271,6 +11271,13 @@ pub struct AdvancedAi {
     /// `walls-for-the-war-front`: last turn an enemy soldier was seen near our
     /// unwalled city, by (city tile, enemy).
     war_front_sightings: BTreeMap<(Pos, usize), u32>,
+    /// `war-threat-holds-recovery`: a city threatened in the last few turns
+    /// of a major war still holds the plan in Recovery. See
+    /// `advanced/war_threat_holds_recovery.rs`. Off by default.
+    war_threat_holds_recovery: bool,
+    /// `war-threat-holds-recovery`: the last turn of the current major war on
+    /// which one of our cities was threatened. `None` at peace.
+    war_threat_seen: Option<u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11721,6 +11728,8 @@ mod war_defense_spends_the_runway;
 mod war_plans;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
+/// `war-threat-holds-recovery`: see `advanced/war_threat_holds_recovery.rs`.
+mod war_threat_holds_recovery;
 /// `watched-capital-keeps-its-defender-gold`: see
 /// `advanced/watched_capital_keeps_its_defender_gold.rs`.
 mod watched_capital_keeps_its_defender_gold;
@@ -14128,6 +14137,9 @@ impl AdvancedAi {
         } else {
             self.major_war_since = None;
         }
+        // `war-threat-holds-recovery`: the war's last threatened turn; exact
+        // no-op with the gene off. See `advanced/war_threat_holds_recovery.rs`.
+        self.observe_war_threat(g, pid, major_war);
         // `prey-reads-a-steady-power`: before the front is chosen. See
         // `one_war::steady_rival_power`.
         self.record_rival_power(g, pid);

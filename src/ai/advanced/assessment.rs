@@ -597,7 +597,11 @@ impl AdvancedAi {
         // Domination, and the finishing front fell away. Over October 4-5,
         // Recovery turns at twice the strongest rival's power or more lost a
         // city within 5 turns 4 times in 82, against 110 in 807 under parity.
-        let threat_recovery = threatened_city.is_some()
+        // `war-threat-holds-recovery`: a city threatened in the war's last
+        // few turns counts as threatened now. `false` with the gene off. See
+        // `advanced/war_threat_holds_recovery.rs`.
+        let threat_recovery = (threatened_city.is_some()
+            || (at_war && self.war_threat_holds(g, threatened_city.is_some())))
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
         // `score-seat-takes-what-pays`: the open city a Score seat takes

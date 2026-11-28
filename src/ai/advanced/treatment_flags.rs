@@ -774,6 +774,9 @@ impl AdvancedAi {
         /// Opt-in gene `walls-for-the-war-front`; see
         /// `advanced/walls_for_the_war_front.rs`.
         walls_for_the_war_front => enable_walls_for_the_war_front, disable_walls_for_the_war_front;
+        /// Opt-in gene `war-threat-holds-recovery`; see
+        /// `advanced/war_threat_holds_recovery.rs`.
+        war_threat_holds_recovery => enable_war_threat_holds_recovery, disable_war_threat_holds_recovery;
     }
 
     toggles! {

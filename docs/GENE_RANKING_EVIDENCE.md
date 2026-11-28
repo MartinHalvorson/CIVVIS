@@ -197,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `stacked-shooter-steps-out` | off (unmeasured) | Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps one shooter and steps our other soldiers beside it, so the shooters can fire; see `advanced/stacked_shooter_steps_out.rs`. | 1 \| 1 |
 | `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
 | `walls-for-the-war-front` | off (unmeasured) | Opt-in gene `walls-for-the-war-front`; see `advanced/walls_for_the_war_front.rs`. | 1 \| 1 |
+| `war-threat-holds-recovery` | off (unmeasured) | Opt-in gene `war-threat-holds-recovery`; see `advanced/war_threat_holds_recovery.rs`. | 1 \| 1 |
 | `watched-capital-trains-its-defender` | off (unmeasured) | Opt-in gene `watched-capital-trains-its-defender`; see `advanced/watched_capital_trains_its_defender.rs`. | 1 \| 1 |
 
 ## Removed from the code
