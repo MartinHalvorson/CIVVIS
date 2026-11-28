@@ -8023,6 +8023,10 @@ pub struct AdvancedAi {
     /// `fresh-war-holds-the-home`: the windows, by (declarer, first turn),
     /// that have bought their shooter.
     fresh_war_bought: BTreeSet<(usize, u32)>,
+    /// `founding-voyage-2`: version one's voyage, and the soldier at sea
+    /// beside the Settler sails with it. See
+    /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
+    founding_voyage_2: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9815,6 +9819,10 @@ pub struct AdvancedAi {
     /// government ladder. See
     /// `advanced/rival_science_run_opens_the_spy_civics.rs`. Off by default.
     rival_science_run_opens_the_spy_civics: bool,
+    /// `person-units-threaten-civilians` (hotseat): the soldiers of a rival
+    /// a person plays threaten our civilians whatever the war state. See
+    /// `advanced/person_units_threaten_civilians.rs`. Off by default.
+    person_units_threaten_civilians: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -9894,6 +9902,10 @@ pub struct AdvancedAi {
     science_specializes_earlier: bool,
     /// Finish the missing Science-lane Campus unlock before optional detours.
     science_writing_before_the_luxury: bool,
+    /// `science-seat-writes-first`: a Science-target seat that knows two
+    /// technologies and not Writing makes Writing its forced research goal.
+    /// See `advanced/science_seat_writes_first.rs`. Off by default.
+    science_seat_writes_first: bool,
     /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
     spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
@@ -10816,6 +10828,13 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `spreaders-spread-before-they-chart-2`: version one, and the corps'
+    /// searchers share one budget: the last-charge scouts already walking
+    /// the fog count against the seekers' and the scouts' quotas, the surplus
+    /// clause counts every searcher already out, and the seekers are the
+    /// spreaders with the fewest charges. See
+    /// `advanced/spreaders_spread_before_they_chart.rs`. Off by default.
+    spreaders_spread_before_they_chart_2: bool,
     /// `settler-walk-clock-runs-all-game`: the Settler walk clock that
     /// `settler-walk-deadline` and `stalled-settler-takes-a-safe-site` read
     /// ticks on every turn the Settler is stepped (retreats, flights and
@@ -11297,6 +11316,22 @@ pub struct AdvancedAi {
     /// `war-threat-holds-recovery`: the last turn of the current major war on
     /// which one of our cities was threatened. `None` at peace.
     war_threat_seen: Option<u32>,
+    /// `taken-settler-is-retaken`: a hostile standing on a civilian it took
+    /// from us is worth striking for the civilian. See
+    /// `advanced/taken_settler_is_retaken.rs`. Off by default.
+    taken_settler_is_retaken: bool,
+    /// `taken-settler-is-retaken`: each civilian taken from us, by its
+    /// captor and identity (`civilian_identity`), and the turn it was taken.
+    taken_civilians: BTreeMap<(usize, i64), u32>,
+    /// `taken-settler-is-retaken`: our Settlers and Builders at the last
+    /// reading, by board id: where each stood and what it was.
+    taken_civilian_watch: BTreeMap<u32, (Pos, Name)>,
+    /// `taken-settler-is-retaken`: watched civilians a rebuilt board no
+    /// longer carries, by last tile, awaiting the next reading.
+    taken_civilian_vanished: Vec<(Pos, Name)>,
+    /// `taken-settler-is-retaken`: the foreign civilians in sight at the last
+    /// reading, by owner and identity.
+    taken_civilian_foreign: BTreeSet<(usize, i64)>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12406,6 +12441,8 @@ pub(crate) mod city_state_quests;
 
 /// `science-core-ends-expansion`: see `advanced/science_core_ends_expansion.rs`.
 mod science_core_ends_expansion;
+/// `science-seat-writes-first`: see `advanced/science_seat_writes_first.rs`.
+mod science_seat_writes_first;
 /// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
 mod science_specializes_earlier;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
@@ -12764,6 +12801,9 @@ mod emptied_camp_is_taken;
 mod first_ship_closes_the_age;
 /// `fresh-war-holds-the-home`: see `advanced/fresh_war_holds_the_home.rs`.
 mod fresh_war_holds_the_home;
+/// `person-units-threaten-civilians`: see
+/// `advanced/person_units_threaten_civilians.rs`.
+mod person_units_threaten_civilians;
 /// `raiders-holding-a-settler-are-hunted`: see
 /// `advanced/raiders_holding_a_settler.rs`.
 mod raiders_holding_a_settler;
@@ -12820,6 +12860,8 @@ mod strategic_unit_closes_the_age;
 /// `tagma-timing-needs-the-edge`: see
 /// `advanced/tagma_timing_needs_the_edge.rs`.
 mod tagma_timing_needs_the_edge;
+/// `taken-settler-is-retaken`: see `advanced/taken_settler_is_retaken.rs`.
+mod taken_settler_is_retaken;
 /// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
 /// tiles ahead of the Builder charges calls a Builder ahead of the other
 /// idle-queue claims. See
@@ -13269,6 +13311,7 @@ impl AdvancedAi {
         self.early_settler_homes.clear();
         self.hostile_last_seen.clear();
         self.settler_vanished.clear();
+        self.forget_taken_civilians();
         self.capture_scar_city_sites = None;
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
@@ -13343,6 +13386,9 @@ impl AdvancedAi {
                 .map(|(_, pos)| *pos),
         );
         self.settler_last_seen = remap(&self.settler_last_seen);
+        // `taken-settler-is-retaken`: a watched civilian the rebuilt board no
+        // longer carries waits for the next reading. Empty with the gene off.
+        self.remap_taken_civilian_watch(map);
         self.early_settler_homes = remap(&self.early_settler_homes);
         self.summoned_guard_turn = self
             .summoned_guard_turn
@@ -25131,8 +25177,10 @@ impl AdvancedAi {
                 .is_some_and(|tile| g.rules.is_water(tile))
         });
         g.units.values().any(|unit| {
+            // `person-units-threaten-civilians`: a person's soldier takes a
+            // civilian at any war state. Off, exactly `is_at_war`.
             if unit.owner == pid
-                || !g.is_at_war(pid, unit.owner)
+                || !self.civilian_threat_owner(g, pid, unit.owner)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 return false;
@@ -27438,6 +27486,9 @@ impl AdvancedAi {
         self.base.plaza_hall_first = self.score_expands_hard();
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
+        // `taken-settler-is-retaken`: which of our civilians a hostile took
+        // since the last turn. Exact no-op with the gene off.
+        self.observe_taken_civilians(g, pid);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         self.maintain_victory_portfolio(g, pid);

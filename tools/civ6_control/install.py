@@ -270,6 +270,25 @@ HOTSEAT_PLAYER_CHANGE = """		<!-- Hotseat only (install.py): the hand-over scree
 		</ReplaceUIScript>
 """
 
+#: Hotseat only (install.py): the scenarios' event popup (Base/Assets/UI/Popups/
+#: EventPopup.lua). Raised for one player (`:35` `if (kPopupData.ForPlayer ~= nil
+#: and kPopupData.ForPlayer ~= playerID) then return; end`) and queued at once
+#: (`:175` `UIManager:QueuePopup(ContextPtr, PopupPriority.Medium)`), with no
+#: closer it waited under the cover and opened on the person's turn, a CIVVIS
+#: seat's event in front of them (as Historic Moments did before #6000). On a
+#: CIVVIS seat's turn the closer now draws it under the cover and closes it the
+#: way its Continue button does (`:341`, `OnClose`); on the person's it is
+#: theirs. Never in a single-player install: the ladder's screens are as they were.
+HOTSEAT_EVENT_POPUP = """		<!-- Hotseat only (install.py): the scenarios' event popup. On a CIVVIS
+		     seat's turn the closer closes it; on a person's it is theirs. -->
+		<ReplaceUIScript id="CivvisControlHotseatEventPopup">
+			<Properties>
+				<LuaContext>EventPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+"""
+
 
 #: Hotseat with a person at the Mac only: the cover over every turn that is not
 #: theirs, and the view kept across those turns (CivvisHotseatCover.lua). A
@@ -351,7 +370,7 @@ def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     listed = "".join(f"\t\t<File>{name}.xml</File>\n\t\t<File>{name}.lua</File>\n"
                      for name in names + ([HOTSEAT_COVER] if cover else []))
     text = text.replace("\t</Files>", listed + "\t</Files>", 1)
-    actions = HOTSEAT_PLAYER_CHANGE + (HOTSEAT_COVER_ACTION if cover else "")
+    actions = HOTSEAT_PLAYER_CHANGE + HOTSEAT_EVENT_POPUP + (HOTSEAT_COVER_ACTION if cover else "")
     return text.replace("\t</InGameActions>", actions + "\t</InGameActions>", 1)
 
 

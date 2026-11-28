@@ -1,0 +1,12 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "taken-settler-is-retaken",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. One board pair from the person-played hotseat game hotseat-20261128T031456Z (6 players, Online, seat p1, Greece, the religion seat), where the person's Scout took p1's first Settler on turn 12: the seat's own events.jsonl lines 1-290 (through the turn-12 frame-0 state). Both arms run one frozen civvis_orders built by CI from the PR head be94ce4a (hotseat-bundle on probe commit ef5488dd, whose only change is the bundle workflow's artifact upload; sha256 0f4db74c54f09ba48c1d7571bed6e0e4a030d01492406225b29dbc26e52326bd), the way the live brain runs it: --serve --fresh-board --explain --victory religious --civ CIVILIZATION_GREECE with the game's own genome (why.log line 1: forced []), fed turns 11 and 12 on one process so the turn-11 board's Settler is in the agent's memory. The on arm adds --with taken-settler-is-retaken. Turn 11: identical orders (FORTIFY 131073). Turn 12: the off arm reproduces the live record (preview ATTACK 131073 on (60, 29), then FORTIFY 131073, as decisions.jsonl turn 12 has it); the on arm journals 'Our settler was taken at (46, 29)' and 'The captor of our civilian is hunted ... the Destroy row carries its 280' and orders ATTACK 131073 on (60, 29), the Scout standing on the captured Settler. The off arm journals no taken-settler-is-retaken line.",
+ "archive": {
+  "path": "docs/eval/2026-11-28-taken-settler-is-retaken.native-queries.tar.xz",
+  "sha256": "c48724eb498498ff6c26adebc8cb2161216929cc285d6340ee5250fa3a214255"
+ },
+ "members": [
+  "native-queries-01/0000/result.json"
+ ]
+}

@@ -6158,9 +6158,12 @@ function strangeTurnLeft(g, wide = strange.turnWide || 0, column = strange.turnC
   const open = strangeOpen(), mine = Math.max(0, open.indexOf(strange.follow));
   const clear = lanes => Math.max(g.lane / 2, g.near * lanes + 16);
   const right = g.cx + clear(open.length - 1 - mine), left = g.cx - clear(mine) - wide;
-  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - wide;
+  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - Math.ceil(wide);
   if (right <= most) return Math.round(right);
-  if (left >= 12) return Math.round(left);
+  // Left of the tree it stands by its right edge, so it is placed to the
+  // fraction of a pixel its width is: rounded, and its width rounded up, its
+  // edge fell a pixel or more short of the green path.
+  if (left >= 12) return +left.toFixed(2);
   return Math.round(Math.max(12, most));
 }
 function strangeY(g, turn, cam) {
@@ -8121,7 +8124,14 @@ function strangeMount() {
 // `strange.shape`), the line moving moves the worlds' card with it, and a
 // card that has grown by itself, a number gaining a figure, is seen by the
 // browser once it has laid the page out anyway (`strangeMount`).
-const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-standings", ".strange-versus", ".strange-omen", ".strange-send"];
+// The turn on the line is one of them: when its number grows a digit (9 to
+// 10, 99 to 100) it is wider, and standing left of the tree it is placed by
+// its right edge (`strangeTurnLeft`), so it is measured again. Measured only
+// when the other cards changed, it stood a digit off the green path from
+// turn 10 on (published-build red on `check_doctor_strange_send_it` since
+// #5982).
+const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-standings", ".strange-versus", ".strange-omen", ".strange-send",
+  ".strange-turn"];
 function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
@@ -8141,7 +8151,7 @@ function strangeCards() {
   // line would be under it there: then it stands over the turn.
   const turn = box(".strange-turn"), foot = box(".strange-send");
   // What the turn on the line needs to stand clear of the column on the right.
-  strange.turnWide = Math.ceil(turn.width);
+  strange.turnWide = turn.width;
   strange.turnColumn = {left: column.left, bottom: column.bottom};
   const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
   if (hud.style.getPropertyValue("--strange-send-lift") !== `${lift}px`) hud.style.setProperty("--strange-send-lift", `${lift}px`);
