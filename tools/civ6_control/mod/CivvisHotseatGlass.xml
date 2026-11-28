@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DIAGNOSTIC (the probe flag, CivvisHotseatGlass.lua): a see-through popup in the
+     cover's place in the queue. The Box draws nothing and consumes the mouse. -->
+<Context Hidden="1">
+	<Box ID="Pane" Size="parent,parent" Color="0,0,0,0" ConsumeMouse="1"/>
+</Context>

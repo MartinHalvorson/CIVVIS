@@ -293,6 +293,33 @@ def hotseat_cover_wanted(config: dict) -> bool:
                 and (config.get("HotseatCover") or config.get("HotseatAutoStart")))
 
 
+#: DIAGNOSTIC (`tools/civ6_hotseat.py --probe`): what a see-through wait would
+#: stand on, measured in a live game. Two UI contexts (the step timeline and a
+#: see-through popup in the cover's place) and one gameplay script, the only
+#: side that can set whose fog the screen draws (CivvisHotseatObserver.lua).
+HOTSEAT_PROBE = ("CivvisHotseatProbe", "CivvisHotseatGlass")
+HOTSEAT_OBSERVER = "CivvisHotseatObserver"
+HOTSEAT_PROBES = ("still", "turns")
+HOTSEAT_PROBE_ACTION = """		<!-- DIAGNOSTIC (install.py, the probe flag): the see-through probe. -->
+		<AddUserInterfaces id="CivvisHotseatProbeUI">
+			<Properties>
+				<Context>InGame</Context>
+			</Properties>
+			<File>CivvisHotseatProbe.xml</File>
+			<File>CivvisHotseatGlass.xml</File>
+		</AddUserInterfaces>
+		<AddGameplayScripts id="CivvisHotseatObserverScript">
+			<File>CivvisHotseatObserver.lua</File>
+		</AddGameplayScripts>
+"""
+
+
+def hotseat_probe_wanted(config: dict) -> bool:
+    """Whether this install carries the see-through probe: a hotseat game
+    started with `--probe`."""
+    return bool(config.get("Hotseat") and config.get("HotseatProbe") in HOTSEAT_PROBES)
+
+
 def hotseat_seat_tag(tag: str | None, seat: int) -> str:
     """The run tag one hotseat seat's agent writes and its brain reads."""
     return f"{tag or 'unset'}-p{int(seat)}"
@@ -334,9 +361,11 @@ def hotseat_seat_config(config: dict, seat: int) -> dict:
     return seat_config
 
 
-def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
+def hotseat_modinfo(text: str, seats: list[int], cover: bool = False,
+                    probe: bool = False) -> str:
     """The modinfo for a hotseat install: seat agents, the hand-over screen,
-    and with `cover` the person's cover context."""
+    with `cover` the person's cover context, and with `probe` the diagnostic
+    contexts and their gameplay script."""
     names = [HOTSEAT_AGENT.format(seat=seat) for seat in seats]
     action = re.search(r'(<AddUserInterfaces id="CivvisControlAgentUI">.*?)'
                        r'(\t*<File>CivvisControlAgent\.xml</File>\n)(.*?</AddUserInterfaces>)',
@@ -349,9 +378,13 @@ def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     # Every file an action names must be listed under <Files>, or the game drops
     # the action without a word (the note above <Files> in the modinfo).
     listed = "".join(f"\t\t<File>{name}.xml</File>\n\t\t<File>{name}.lua</File>\n"
-                     for name in names + ([HOTSEAT_COVER] if cover else []))
+                     for name in names + ([HOTSEAT_COVER] if cover else [])
+                     + (list(HOTSEAT_PROBE) if probe else []))
+    if probe:
+        listed += f"\t\t<File>{HOTSEAT_OBSERVER}.lua</File>\n"
     text = text.replace("\t</Files>", listed + "\t</Files>", 1)
-    actions = HOTSEAT_PLAYER_CHANGE + (HOTSEAT_COVER_ACTION if cover else "")
+    actions = (HOTSEAT_PLAYER_CHANGE + (HOTSEAT_COVER_ACTION if cover else "")
+               + (HOTSEAT_PROBE_ACTION if probe else ""))
     return text.replace("\t</InGameActions>", actions + "\t</InGameActions>", 1)
 
 
@@ -380,8 +413,18 @@ def _write_mod(target: Path, config: dict) -> None:
     target.mkdir(parents=True, exist_ok=True)
     text = prelude(config)
     cover = hotseat_cover_wanted(config)
+    probe = hotseat_probe_wanted(config)
     for src in sorted(MOD_SOURCE.iterdir()):
-        if src.stem == HOTSEAT_COVER:
+        if src.stem in HOTSEAT_PROBE or src.stem == HOTSEAT_OBSERVER:
+            # The diagnostic's own files: in no install but a `--probe` game's.
+            if not probe:
+                continue
+            if src.suffix == ".lua" and src.stem in HOTSEAT_PROBE:
+                _write_script(target / src.name, text + installed_lua(src.read_text()))
+            else:
+                # The gameplay script reads no settings; the layouts are data.
+                shutil.copy2(src, target / src.name)
+        elif src.stem == HOTSEAT_COVER:
             # Only a game a person plays carries it; every other install is
             # exactly what it was before the cover existed.
             if not cover:
@@ -424,7 +467,7 @@ def _write_mod(target: Path, config: dict) -> None:
             (target / f"{name}.xml").write_text(context)
         modinfo = target / "CivvisControl.modinfo"
         text = hotseat_modinfo((MOD_SOURCE / "CivvisControl.modinfo").read_text(), seats,
-                               cover=cover)
+                               cover=cover, probe=probe)
         if config.get("RequireHarness"):
             text = person_facing_modinfo(text)
         modinfo.write_text(text)

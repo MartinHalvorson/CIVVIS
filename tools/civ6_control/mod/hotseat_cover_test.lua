@@ -143,6 +143,7 @@ local function load(config)
 			if path == "/InGame/TopOptionsMenu" then return gameMenu end
 		end,
 		SetShutdown = function(self, f) handlers.shutdown = f end,
+		SetHide = function(self, hide) did.contextHidden = hide end,
 		SetInputHandler = function(self, f) handlers.input = f end,
 		SetUpdate = function(self, f) handlers.update = f end,
 	}
@@ -208,6 +209,7 @@ end
 do
 	local cover, world, did, handlers = load(HOTSEAT())
 	assert(did.texture == "LEADER_HOJO_BACKGROUND")
+	assert(did.contextHidden == true, "hidden until it is queued")
 	assert(last(did, "hotseat_cover_armed"):find('"cover":true', 1, true))
 
 	-- The game loads on the person's turn 1, its hand-over up and paused.
@@ -431,6 +433,7 @@ do
 end
 do
 	local cover, world, did, handlers = load(HOTSEAT({ HotseatCover = false }))
+	assert(did.contextHidden == true, "the opaque context hides itself: nothing queues it here")
 	world.camX, world.camY = 8, 9
 	handlers.LocalPlayerTurnEnd()
 	assert(not cover.up and #did.queued == 0, "--no-cover: the turns are on screen")

@@ -726,6 +726,53 @@ class CoverTest(unittest.TestCase):
         self.assertIn('HotseatCoverSound = "silent",', head)
         self.assertIn("HotseatCoverTimer = false,", head)
 
+    def test_the_probe_is_in_no_install_but_a_probe_games(self) -> None:
+        probe_files = {"CivvisHotseatProbe.lua", "CivvisHotseatProbe.xml", "CivvisHotseatGlass.lua",
+                       "CivvisHotseatGlass.xml", "CivvisHotseatObserver.lua"}
+        for name, config in {
+            "a person's game": self.config(),
+            "single player": {"RunTag": "civvis-solo", "Play": True, "CivvisDecides": True},
+            "unattended, asked": self.config(players=6, civvis_seats=2, leader=None, probe="turns"),
+            "a stub that is nobody, asked": self.config(auto_human="stub", probe="still"),
+            "not a probe's name": dict(self.config(), HotseatProbe="yes"),
+        }.items():
+            with self.subTest(name):
+                out = self.install(config)
+                self.assertEqual({f.name for f in out.iterdir()} & probe_files, set())
+                modinfo = (out / "CivvisControl.modinfo").read_text()
+                self.assertNotIn("CivvisHotseatProbe", modinfo)
+                self.assertNotIn("AddGameplayScripts", modinfo)
+        for mode in install.HOTSEAT_PROBES:
+            with self.subTest(mode):
+                config = self.config(probe=mode, auto_human="gated" if mode == "turns" else None)
+                self.assertEqual(config["HotseatProbe"], mode)
+                out = self.install(config)
+                self.assertEqual({f.name for f in out.iterdir()} & probe_files, probe_files)
+                tree = ET.parse(out / "CivvisControl.modinfo").getroot()
+                files = {f.text for f in tree.find("./Files")}
+                self.assertLessEqual(probe_files, files)
+                contexts = [f.text for f in tree.findall(
+                    "./InGameActions/AddUserInterfaces[@id='CivvisHotseatProbeUI']/File")]
+                self.assertEqual(contexts, ["CivvisHotseatProbe.xml", "CivvisHotseatGlass.xml"])
+                scripts = [f.text for f in tree.findall("./InGameActions/AddGameplayScripts/File")]
+                self.assertEqual(scripts, ["CivvisHotseatObserver.lua"])
+                for action in tree.find("./InGameActions"):
+                    for named in action.findall("File"):
+                        self.assertIn(named.text, files)
+                # The two UI scripts read the run's settings; the gameplay script reads none.
+                for script in ("CivvisHotseatProbe.lua", "CivvisHotseatGlass.lua"):
+                    head = (out / script).read_text().split("}\n", 1)[0]
+                    self.assertIn(f'HotseatProbe = "{mode}",', head)
+                self.assertEqual((out / "CivvisHotseatObserver.lua").read_text(),
+                                 (Path(install.__file__).parent / "mod"
+                                  / "CivvisHotseatObserver.lua").read_text())
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main(["--probe", "still"])
+            self.assertEqual(ran.call_args.args[0].probe, "still")
+            hotseat.main([])
+            self.assertIsNone(ran.call_args.args[0].probe)
+
     def test_the_cover_context_is_installed_for_a_persons_game(self) -> None:
         out = self.install(self.config())
         tree = ET.fromstring((out / "CivvisControl.modinfo").read_text())

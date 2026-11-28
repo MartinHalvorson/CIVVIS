@@ -816,6 +816,11 @@ function CivvisHotseatCover.arm()
 	local function guarded(handler)
 		return function(...) pcall(handler, ...); end;
 	end
+	-- A context a mod adds is shown unless it hides itself, and this one is an
+	-- opaque screen that takes every click: hidden until `raise` queues it. A
+	-- game that never raises it (`--no-cover`, where this context only keeps
+	-- the person's view) must not start under it.
+	pcall(function() ContextPtr:SetHide(true); end);
 	-- The shipped hotseat backdrop, dimmed (HotSeatBackground.lua:34); the Box
 	-- under it is opaque whether or not the texture loads.
 	pcall(function() Controls.Backdrop:SetTexture("LEADER_HOJO_BACKGROUND"); end);
