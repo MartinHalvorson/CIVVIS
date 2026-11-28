@@ -72,6 +72,10 @@ fn seat(on: bool) -> AdvancedAi {
     ai.enable_live_barbarian_scouts_capture();
     ai.enable_live_formationless_settler_shadow();
     ai.enable_settler_threat_detour();
+    // The live ledger withholds `barbarian-scouts-are-scouts` (the seat's
+    // `why.log` line 1, `ledger_withheld`), which is why the recorded Scout
+    // priced the site at 38.
+    ai.disable_barbarian_scouts_are_scouts();
     ai.settlement_safety = true;
     if on {
         ai.enable_capital_founds_before_it_flees();
