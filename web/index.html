@@ -388,9 +388,16 @@
      tool"), so this page, which is CIVVIS, AI Debugger, Doctor Strange's
      Civ 6 and Edge of Tomorrow, lists the eight top-level names and no
      branch. */
+  /* Tournaments stands before Charts/ and CIVVIS just above AI Debugger
+     since 2026-11-28 (operator: "move tournaments above charts in the
+     ordering", "move civvis above the civvis ai debugger in the ordering"),
+     so the first row is HOME in four tenths and TOURNAMENTS in six, and
+     CHARTS/ and CIVVIS, each now beside a name with a row of its own, take
+     whole rows. */
   .head-links > .home-link { grid-column: span 5; }
+  .head-links > #homelink { grid-column: span 4; }
   .head-links > #tourlink { grid-column: span 6; }
-  .head-links > #watchlink { grid-column: span 4; }
+  .head-links > #chartslink, .head-links > #watchlink { grid-column: 1 / -1; }
   /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
      6 above ai debugger", after CIVVIS) is the one name longer than half a
      row and has a row of its own. AI Debugger and Civ 6 keep the rows of
@@ -6854,11 +6861,11 @@
            is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
-        <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
-        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
+        <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="strangelink" href="doctor-strange" target="_top">Doctor Strange's CIVVIS</a>
         <a class="home-link" id="tomorrowlink" href="edge-of-tomorrow" target="_top">CIVVIS: Edge of Tomorrow</a>
+        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="playlink" href="debugger" target="_top">CIVVIS AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>

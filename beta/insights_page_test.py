@@ -345,8 +345,11 @@ class TheSiteList(unittest.TestCase):
         # insights". It is listed first under Charts/, so Charts/ opens it.
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         links = re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav)
-        self.assertEqual(links[:3], [
+        # Tournaments stands before Charts/ since 2026-11-28 (operator: "move
+        # tournaments above charts in the ordering").
+        self.assertEqual(links[:4], [
             ("site-link", "../../home/", "Home"),
+            ("site-link", "../../tournaments/", "Tournaments"),
             ("site-link", "./", "Charts/"),
             ("site-link sub-link", "./", "AI Insights"),
         ])
