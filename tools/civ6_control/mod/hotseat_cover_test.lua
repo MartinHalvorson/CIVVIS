@@ -644,54 +644,71 @@ do
 	assert(layout:find('<Container ID="Wait"[^>]*Hidden="1"'), "hidden until a wait is on")
 	assert(layout:find('ID="WaitFill"', 1, true) and layout:find('ID="WaitText"', 1, true))
 
-	-- The estimate: nothing without a wait on record; the newest weighted most.
-	assert(cover.estimate(0) == nil)
-	cover.waits[0] = { 10 }
-	assert(math.abs(cover.estimate(0) - 11) < 1e-9, "one wait and a tenth")
-	cover.waits[0] = { 99, 10, 10, 10, 20 }
-	assert(math.abs(cover.estimate(0) - (20 * 4 + 10 * 3 + 10 * 2 + 10) / 10 * 1.1) < 1e-9,
-		"the last four, 4:3:2:1")
-	assert(cover.estimate(3) == nil, "each person's seat has its own waits")
-	cover.waits[0] = { 0.01 }
-	assert(cover.estimate(0) == 0.5, "never less than half a second")
+	-- About how long one of these takes: nothing without any on record; a mean,
+	-- the newer weighted more; nothing counted at more than twice the median.
+	local near = function(a, b) return math.abs(a - b) < 1e-9 end
+	assert(cover.typical(nil) == nil and cover.typical({}) == nil)
+	assert(cover.typical({ 2 }) == 2)
+	assert(near(cover.typical({ 1, 2 }), (1 + 2 * 2) / 3), "the newer weighs more")
+	assert(near(cover.typical({ 1, 1, 1, 1, 9 }), (1 + 2 + 3 + 4 + 2 * 5) / 15),
+		"a 9 s turn among 1 s ones counts as 2 s: " .. cover.typical({ 1, 1, 1, 1, 9 }))
+	assert(cover.typical({ 30, 1, 1, 1, 1, 1 }) == 1, "the last five only")
+	assert(near(cover.typical({ 3, 1, 2 }, true), 2), "`all`: every one, alike")
+	assert(near(cover.typical({ 0.2, 0.3 }), (0.2 + 0.6) / 3), "a fast seat stays fast")
 
-	-- The bar: straight to 85%, then ever slower, never full, never backwards.
-	assert(cover.progress(5, nil) == nil and cover.progress(5, 0) == nil)
-	assert(cover.progress(0, 10) == 0 and math.abs(cover.progress(4, 10) - 0.4) < 1e-9)
-	assert(math.abs(cover.progress(8.5, 10) - 0.85) < 1e-9)
-	local previous = 0
-	for tenth = 0, 2000 do
-		local share = cover.progress(tenth / 10, 10)
-		assert(share >= previous and share < 1, "at " .. tenth / 10 .. " s: " .. share)
-		previous = share
+	-- Which seats play before the person's turn is back, in turn order.
+	local function same(a, b)
+		if #a ~= #b then return false end
+		for i = 1, #a do if a[i] ~= b[i] then return false end end
+		return true
 	end
-	assert(cover.progress(10, 10) > 0.85 and cover.progress(10, 10) < 0.9, "on time: not yet full")
-	assert(cover.progress(200, 10) == 0.99)
+	assert(same(cover.lineup(0), { 1, 2 }))
+	local other = load(HOTSEAT({ HotseatSeats = { 0, 1, 3 }, HotseatHumanSeats = { 2 } }))
+	assert(same(other.lineup(2), { 3, 0, 1 }), "after the person's seat, round to the start")
+	local two = load(HOTSEAT({ HotseatSeats = { 1, 3 }, HotseatHumanSeats = { 0, 2 } }))
+	assert(same(two.lineup(0), { 1 }) and same(two.lineup(2), { 3 }), "up to the next person")
 
-	assert(cover.remaining(3, nil) == "")
-	assert(cover.remaining(0, 12) == "About 12 s")
-	assert(cover.remaining(0.2, 12) == "About 12 s" and cover.remaining(1.5, 12) == "About 11 s")
-	assert(cover.remaining(11.4, 12) == "About 1 s")
-	assert(cover.remaining(11.6, 12) == "Any moment now" and cover.remaining(40, 12) == "Any moment now")
-	assert(cover.remaining(0, 59.5) == "About 1 min 00 s", cover.remaining(0, 59.5))
-	assert(cover.remaining(0, 125) == "About 2 min 05 s")
+	assert(cover.timeLeft(nil, false) == "")
+	assert(cover.timeLeft(12, false) == "About 12 s" and cover.timeLeft(11.2, false) == "About 12 s")
+	assert(cover.timeLeft(0.4, true) == "Any moment now", "nothing but the last stretch left")
+	assert(cover.timeLeft(0.4, false) == "About 1 s" and cover.timeLeft(0, false) == "About 1 s",
+		"never 'any moment' while a seat still plays")
+	assert(cover.timeLeft(59.5, false) == "About 1 min 00 s")
+	assert(cover.timeLeft(125, false) == "About 2 min 05 s")
 end
--- A person's game: the first wait is a sweep, the second a countdown.
-local function round(world, handlers, seconds, turn)
-	-- The person (seat 0) ends their turn; one CIVVIS seat plays `seconds`; their
-	-- next turn begins and its hand-over is pressed.
-	world.pid, world.active[0] = 0, false
+
+-- Frames of 0.1 s; `each` after every one.
+local function frames(handlers, seconds, each)
+	for _ = 1, math.floor(seconds / 0.1 + 0.5) do
+		handlers.update(0.1)
+		if each then each() end
+	end
+end
+-- One wait: the person (seat 0) ends turn `turn`; each { seat, gap, took }
+-- plays in order; `tail` s later their next turn begins and its hand-over is
+-- pressed.
+local function wait(world, handlers, turn, seats, tail, each)
+	world.pid, world.turn, world.active[0] = 0, turn, false
 	handlers.LocalPlayerTurnEnd()
-	world.pid, world.active[1] = 1, true
-	handlers.LocalPlayerTurnBegin()
-	ticks(handlers, seconds)
-	world.active[1] = false
-	handlers.LocalPlayerTurnEnd()
-	world.pid, world.turn, world.active[0], world.paused[0] = 0, turn, true, true
+	for _, s in ipairs(seats) do
+		frames(handlers, s[2], each)
+		world.pid, world.active[s[1]] = s[1], true
+		handlers.LocalPlayerTurnBegin()
+		frames(handlers, s[3], each)
+		world.active[s[1]] = false
+		handlers.LocalPlayerTurnEnd()
+	end
+	frames(handlers, tail, each)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, turn + 1, true, true
 	handlers.LocalPlayerTurnBegin()
 	world.paused[0] = false
 	handlers.PlayerChange_Close(0)
 end
+local function field(line, name)
+	return line:match('"' .. name .. '":"?([^,"}]*)')
+end
+
+-- The first wait counts as soon as one seat's turn is known.
 do
 	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
 	assert(last(did, "hotseat_cover_armed"):find('"timer":true', 1, true))
@@ -699,9 +716,11 @@ do
 	handlers.LocalPlayerTurnEnd()
 	assert(cover.wait and cover.wait.timed and cover.wait.seat == 0 and cover.wait.estimate == nil)
 	assert(did.bar.hidden == false, "the bar is shown")
+	assert(did.bar.text == "", "nothing to say yet")
+	frames(handlers, 0.3)
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
-	-- No wait on record: a fifth of the track sweeping there and back, no number.
+	-- Nothing on record: a fifth of the track sweeping there and back, no number.
 	local seen = {}
 	for _ = 1, 24 do
 		handlers.update(0.1)
@@ -712,38 +731,210 @@ do
 	local distinct = 0
 	for _ in pairs(seen) do distinct = distinct + 1 end
 	assert(distinct >= 10, "and it moves: " .. distinct)
-	assert(did.bar.text == "", "no guess")
-	ticks(handlers, 5)
+	assert(did.bar.text == "1 of 2", "which seat, and no guess: " .. did.bar.text)
+	frames(handlers, 0.6)
 	world.active[1] = false
 	handlers.LocalPlayerTurnEnd()
+	-- Seat 1 took 3 s: seat 2 is taken to be like it.
+	assert(math.abs(cover.seatTimes[1][1] - 3) < 1e-6 and math.abs(cover.gapTimes[1][1] - 0.3) < 1e-6)
+	handlers.update(0.1)
+	assert(did.bar.text == "1 of 2, about 4 s", did.bar.text)
+	assert(did.bar.offset == 0 and did.bar.width > 1 and did.bar.width < cover.BAR / 2, did.bar.width)
+	frames(handlers, 0.2)
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.update(0.1)
+	assert(did.bar.text == "2 of 2, about 3 s", did.bar.text)
+	frames(handlers, 1.9)
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
 	assert(cover.wait.timed and cover.wait.seat == 0, "a CIVVIS seat's end of turn starts no wait")
+	-- Only the last stretch is left, and none is on record yet.
+	handlers.update(0.1)
+	assert(did.bar.text == "Any moment now", did.bar.text)
+	frames(handlers, 1.4)
 	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
 	handlers.LocalPlayerTurnBegin()
 	world.paused[0] = false
 	handlers.PlayerChange_Close(0)
-	assert(cover.wait == nil and #cover.waits[0] == 1)
-	assert(math.abs(cover.waits[0][1] - 7.4) < 1e-6, "the wait, whole: " .. cover.waits[0][1])
-	assert(last(did, "hotseat_cover"):find('"waited":7.4', 1, true)
-		and last(did, "hotseat_cover"):find('"timed":true', 1, true), last(did, "hotseat_cover"))
+	assert(cover.wait == nil)
+	local lifted = last(did, "hotseat_cover")
+	assert(math.abs(tonumber(field(lifted, "waited")) - 7.1) < 1e-6, lifted)
+	assert(field(lifted, "timed") == "true" and field(lifted, "estimate") == "null"
+		and field(lifted, "seats") == "2", lifted)
+	assert(lifted:find('"took":"1:3.00,2:2.00"', 1, true) and lifted:find('"said":"-,3.0"', 1, true), lifted)
+	assert(math.abs(cover.tailTimes[0][1] - 1.5) < 1e-6, "the last stretch: " .. cover.tailTimes[0][1])
+	assert(#cover.lineups[0] == 2)
 
-	-- Their next wait counts down from it: 7.4 s and a tenth.
+	-- Their next wait counts down from the start: every part of it, as it goes.
 	world.active[0] = false
 	handlers.LocalPlayerTurnEnd()
-	assert(math.abs(cover.wait.estimate - 8.14) < 1e-6)
-	assert(did.bar.width == 1 and did.bar.offset == 0 and did.bar.text == "About 9 s", did.bar.text)
+	-- gap, seat 1, gap, seat 2, the last stretch
+	assert(math.abs(cover.wait.estimate - (0.3 + 3 + 0.3 + 2 + 1.5)) < 1e-6, cover.wait.estimate)
+	assert(did.bar.width == 1 and did.bar.text == "About 8 s", did.bar.text)
+end
+
+-- A seat that runs over holds the count; one that finishes early takes its
+-- time off at once; the bar only moves forward, is never full, and is nearly
+-- there when the person's turn is back. The last seat running over never says
+-- "any moment".
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	local usual = { { 1, 0.1, 2 }, { 2, 0.1, 2 } }
+	for turn = 1, 3 do wait(world, handlers, turn, usual, 1.2, nil) end
+	local widths, texts, previous = {}, {}, 0
+	local function watch()
+		assert(did.bar.width >= previous, "never backwards: " .. previous .. " -> " .. did.bar.width)
+		assert(did.bar.width < cover.BAR, "never full")
+		previous = did.bar.width
+		widths[#widths + 1], texts[#texts + 1] = did.bar.width, did.bar.text
+	end
+	-- Seat 1 takes 8 s instead of 2.
+	world.pid, world.turn, world.active[0] = 0, 4, false
+	handlers.LocalPlayerTurnEnd()
+	previous = 0
+	frames(handlers, 0.1, watch)
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
-	ticks(handlers, 4)
-	assert(did.bar.width == math.floor(4 / 8.14 * cover.BAR + 0.5), "4 s of 8.14: " .. did.bar.width)
-	assert(did.bar.text == "About 5 s", did.bar.text)
-	ticks(handlers, 4)
-	assert(did.bar.text == "Any moment now" and did.bar.width < cover.BAR, did.bar.text)
-	local late = did.bar.width
-	ticks(handlers, 30)
-	assert(did.bar.width > late and did.bar.width < cover.BAR, "a late turn: slower, never full")
-	assert(did.bar.offset == 0)
-	assert(#did.bar.hides == 1, "shown once, not every frame")
+	frames(handlers, 1.0, watch)
+	assert(did.bar.text == "1 of 2, about 5 s", did.bar.text)
+	frames(handlers, 1.5, watch)
+	local held = did.bar.text
+	assert(held == "1 of 2, about 4 s", held)
+	local widthThen = did.bar.width
+	frames(handlers, 5.5, watch)
+	assert(did.bar.text == held, "held while it runs over: " .. did.bar.text)
+	assert(did.bar.width > widthThen, "and the bar still creeps forward")
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 0.1, watch)
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 1.0, watch)
+	assert(did.bar.text == "2 of 2, about 3 s", "moving again: " .. did.bar.text)
+	-- The last seat runs over too: the count holds at the last stretch, a number.
+	frames(handlers, 6, watch)
+	assert(did.bar.text == "2 of 2, about 2 s", did.bar.text)
+	for _, text in ipairs(texts) do assert(text ~= "Any moment now", "not while a seat plays") end
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 1, watch)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 5, true, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+
+	-- An ordinary wait again: nearly full at the lift.
+	previous = 0
+	wait(world, handlers, 5, usual, 1.2, watch)
+	assert(widths[#widths] >= 0.9 * cover.BAR, "there as the turn is: " .. widths[#widths])
+
+	-- Seat 1 done in 0.5 s: its 1.5 s comes off at once (in text), and the bar
+	-- steps forward over a few frames, not one.
+	world.pid, world.turn, world.active[0] = 0, 6, false
+	handlers.LocalPlayerTurnEnd()
+	previous = 0
+	frames(handlers, 0.1, watch)
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 0.5, watch)
+	local before, textBefore = did.bar.width, did.bar.text
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 0.1, watch)
+	local jump = did.bar.width - before
+	assert(textBefore == "1 of 2, about 6 s" and did.bar.text == "1 of 2, about 4 s",
+		textBefore .. " -> " .. did.bar.text)
+	frames(handlers, 0.5, watch)
+	assert(did.bar.width - before > jump, "the step is drawn over more than one frame")
 end
+
+-- One slow turn moves the next estimates by a little, and not for long.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	local usual = { { 1, 0.1, 2 }, { 2, 0.1, 2 } }
+	for turn = 1, 4 do wait(world, handlers, turn, usual, 1) end
+	local base = cover.remaining(cover.startWait(0))
+	cover.wait = nil
+	wait(world, handlers, 5, { { 1, 0.1, 20 }, { 2, 0.1, 2 } }, 1)
+	local after = cover.remaining(cover.startWait(0))
+	cover.wait = nil
+	assert(after - base < 0.2 * 18, "18 s over moves the next by " .. (after - base))
+	for turn = 6, 10 do wait(world, handlers, turn, usual, 1) end
+	assert(math.abs(cover.remaining(cover.startWait(0)) - base) < 1e-6, "and five waits on, not at all")
+	cover.wait = nil
+	assert(#cover.seatTimes[1] == cover.KEEP and #cover.tailTimes[0] == cover.KEEP, "the last five kept")
+end
+
+-- The bar never goes back, even when the count goes up (the first wait: seat 2
+-- far slower than the seat 1 the others were taken to be like), and is never
+-- full while the wait lasts, however long the last stretch runs over.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true,
+		HotseatSeats = { 1, 2, 3, 4 } }))
+	local previous, rose = 0, false
+	local before = nil
+	local function watch()
+		local left = cover.remaining(cover.wait)
+		if left == nil then return end          -- the sweep, before seat 1's turn is known
+		assert(did.bar.width >= previous, "never backwards: " .. previous .. " -> " .. did.bar.width)
+		assert(did.bar.width < cover.BAR, "never full: " .. did.bar.width)
+		previous = did.bar.width
+		if before and left > before + 1 then rose = true end
+		before = left
+	end
+	wait(world, handlers, 1, { { 1, 0.1, 1 }, { 2, 0.1, 6 }, { 3, 0.1, 1 }, { 4, 0.1, 1 } }, 0.5, watch)
+	assert(rose, "the count did go up")
+	previous, before = 0, nil
+	wait(world, handlers, 2, { { 1, 0.1, 1 }, { 2, 0.1, 6 }, { 3, 0.1, 1 }, { 4, 0.1, 1 } }, 20, watch)
+	assert(did.bar.width >= 0.95 * cover.BAR, "and close to the end: " .. did.bar.width)
+end
+-- A long stretch before the first seat counts down too.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	for turn = 1, 3 do wait(world, handlers, turn, { { 1, 4, 1.2 }, { 2, 0.1, 1.2 } }, 0.5) end
+	world.pid, world.turn, world.active[0] = 0, 4, false
+	handlers.LocalPlayerTurnEnd()
+	handlers.update(0.1)
+	assert(did.bar.text == "About 7 s", did.bar.text)
+	frames(handlers, 2)
+	assert(did.bar.text == "About 5 s", did.bar.text)
+end
+-- What is not a seat's own stretch is not learnt as one: a turn begun while
+-- another seat's never ended, the end of a wait the cover stood aside in.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	world.pid, world.active[0] = 0, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 0.5)
+	handlers.LocalPlayerTurnBegin()          -- the same turn said twice: one seat, still counting
+	assert(#cover.wait.seen == 1 and cover.wait.mark == 0, "seen " .. #cover.wait.seen)
+	frames(handlers, 0.5)
+	world.pid, world.active[2] = 2, true      -- seat 1's end never came
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.gapTimes[2] == nil and cover.seatTimes[1] == nil and cover.wait.playing == 2)
+	frames(handlers, 1)
+	world.active[1], world.active[2] = false, false
+	handlers.LocalPlayerTurnEnd()
+	assert(#cover.seatTimes[2] == 1)
+	-- Nothing begins for three minutes: the cover stands aside, nothing is learnt.
+	frames(handlers, 181)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_between"', 1, true))
+	assert(cover.tailTimes[0] == nil and cover.lineups[0] == nil)
+end
+
+-- Fast turns and slow ones are counted alike: tenths of a second, or minutes.
+for _, scale in ipairs({ 0.1, 15 }) do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	local seats = { { 1, 0.1, 2 * scale }, { 2, 0.1, 2 * scale } }
+	for turn = 1, 3 do wait(world, handlers, turn, seats, 1, nil) end
+	local w = cover.startWait(0)
+	local left = cover.remaining(w)
+	assert(math.abs(left - (0.2 + 4 * scale + 1)) < 0.11, scale .. ": " .. left)
+	cover.wait = nil
+end
+
 -- The UI clock decides where it answers: a frame the engine caps the dt of.
 do
 	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
@@ -751,6 +942,7 @@ do
 	world.pid, world.active[0] = 0, false
 	handlers.LocalPlayerTurnEnd()
 	world.pid, world.active[1] = 1, true
+	world.clock = 1000.5
 	handlers.LocalPlayerTurnBegin()
 	world.clock = 1005.5
 	handlers.update(0.1)
@@ -758,74 +950,87 @@ do
 	world.clock = 900    -- a clock that jumped back: the frame's own dt
 	handlers.update(0.25)
 	assert(math.abs(cover.wait.elapsed - 5.75) < 1e-9)
-	-- The stretch between the last frame and the lift counts too.
+	-- The stretch between the last frame and an event counts too.
 	world.clock = 902
 	world.active[1] = false
 	handlers.LocalPlayerTurnEnd()
+	assert(math.abs(cover.seatTimes[1][1] - 7.25) < 1e-9, "seat 1, begin to end: " .. cover.seatTimes[1][1])
+	world.clock = 903
 	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, false
 	handlers.LocalPlayerTurnBegin()
 	handlers.PlayerChange_Close(0)
-	assert(math.abs(cover.waits[0][1] - 7.75) < 1e-9, cover.waits[0][1])
+	assert(math.abs(tonumber(field(last(did, "hotseat_cover"), "waited")) - 8.75) < 1e-9)
+	assert(math.abs(cover.tailTimes[0][1] - 1) < 1e-9)
+	-- Up and down are stamped with the UI clock (the seats' `end_turn_wait.ui_now`).
+	assert(kinds(did, "hotseat_cover")[1]:find('"at":1000', 1, true), kinds(did, "hotseat_cover")[1])
+	assert(last(did, "hotseat_cover"):find('"at":903', 1, true))
 end
--- What does not go on record: a wait joined part-way, one the cover stood
--- aside in, one the game menu was opened over.
+
+-- What does not go on record: what the game menu was opened over, a wait the
+-- cover stood aside in, a wait joined part-way (which only sweeps).
 do
 	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
-	round(world, handlers, 6, 2)
-	assert(#cover.waits[0] == 1)
-	-- The game menu opened over it.
-	world.pid, world.active[0] = 0, false
+	wait(world, handlers, 1, { { 1, 0.1, 2 } }, 1)
+	assert(#cover.seatTimes[1] == 1 and #cover.tailTimes[0] == 1)
+	-- The game menu opened over seat 1's turn: not how long CIVVIS takes.
+	world.pid, world.turn, world.active[0] = 0, 2, false
 	handlers.LocalPlayerTurnEnd()
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
 	world.menuQueued = true
-	ticks(handlers, 40)
+	frames(handlers, 40)
 	world.menuQueued = false
 	world.active[1] = false
 	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 1)
 	world.pid, world.turn, world.active[0], world.paused[0] = 0, 3, true, false
 	handlers.LocalPlayerTurnBegin()
 	handlers.PlayerChange_Close(0)
-	assert(#cover.waits[0] == 1, "40 s in the menu is not how long CIVVIS takes")
+	assert(#cover.seatTimes[1] == 1, "40 s in the menu is not a seat's turn")
+	assert(#cover.tailTimes[0] == 2, "the stretch after it, clean, is")
 	assert(last(did, "hotseat_cover"):find('"timed":false', 1, true))
 	-- The cover stood aside for a stalled seat; raised again, it only sweeps.
 	world.active[0] = false
 	handlers.LocalPlayerTurnEnd()
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
-	ticks(handlers, 91)
-	assert(not cover.up and cover.wait == nil and #cover.waits[0] == 1, "a stall is not a wait")
+	frames(handlers, 91)
+	assert(not cover.up and cover.wait == nil, "a stall is not a wait")
+	assert(#cover.seatTimes[1] == 1 and #cover.tailTimes[0] == 2)
 	world.active[1] = false
 	handlers.LocalPlayerTurnEnd()
 	assert(cover.up and cover.wait and not cover.wait.timed and cover.wait.estimate == nil,
 		"joined part-way: no countdown")
+	frames(handlers, 1)
+	assert(did.bar.width == cover.BAR / 5 and did.bar.text == "", "a sweep: " .. did.bar.text)
 	world.pid, world.turn, world.active[0], world.paused[0] = 0, 4, true, false
 	handlers.LocalPlayerTurnBegin()
 	handlers.PlayerChange_Close(0)
-	assert(#cover.waits[0] == 1)
-	-- A game loaded on a CIVVIS turn.
+	assert(#cover.tailTimes[0] == 2, "the end of a wait joined part-way is not on record")
+	-- A game loaded on a CIVVIS turn: a sweep; the seats seen whole are learnt.
 	local cover2, world2, did2, handlers2 = load(HOTSEAT({ HotseatCoverTimer = true }))
 	world2.pid, world2.turn, world2.active[1] = 1, 30, true
 	handlers2.LoadScreenClose()
 	assert(cover2.wait and not cover2.wait.timed)
-	ticks(handlers2, 3)
+	frames(handlers2, 3)
 	assert(did2.bar.width == cover2.BAR / 5 and did2.bar.text == "")
 	world2.active[1] = false
+	handlers2.LocalPlayerTurnEnd()
+	world2.pid, world2.active[2] = 2, true
+	handlers2.LocalPlayerTurnBegin()
+	frames(handlers2, 2)
+	world2.active[2] = false
 	handlers2.LocalPlayerTurnEnd()
 	world2.pid, world2.turn, world2.active[0], world2.paused[0] = 0, 31, true, false
 	handlers2.LocalPlayerTurnBegin()
 	handlers2.PlayerChange_Close(0)
-	assert(cover2.waits[0] == nil)
+	assert(cover2.seatTimes[1] == nil and #cover2.seatTimes[2] == 1, "seat 2's turn was seen whole")
+	assert(cover2.tailTimes[0] == nil and cover2.lineups[0] == nil)
 end
--- Eight waits are kept; `--no-cover-timer` and an older install show no bar.
-do
-	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
-	for turn = 2, 12 do round(world, handlers, turn, turn) end
-	assert(#cover.waits[0] == 8 and cover.waits[0][8] == 12 and cover.waits[0][1] == 5)
-end
+-- `--no-cover-timer` and an older install show no bar.
 for _, timer in ipairs({ false, "unset" }) do
 	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = timer ~= "unset" and timer or nil }))
-	round(world, handlers, 5, 2)
+	wait(world, handlers, 1, { { 1, 0.1, 5 } }, 1)
 	world.active[0] = false
 	handlers.LocalPlayerTurnEnd()
 	ticks(handlers, 2)
@@ -834,24 +1039,32 @@ end
 -- Two people at one table: each waits their own wait.
 do
 	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true,
-		HotseatHumanSeats = { 0, 2 }, HotseatSeats = { 1 }, HotseatAutoStart = false }))
+		HotseatHumanSeats = { 0, 2 }, HotseatSeats = { 1, 3 }, HotseatAutoStart = false }))
 	world.pid, world.active[0] = 0, false
 	handlers.LocalPlayerTurnEnd()
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
 	ticks(handlers, 9)
+	assert(did.bar.text == "1 of 1", did.bar.text)
 	world.active[1] = false
 	handlers.LocalPlayerTurnEnd()
 	world.pid, world.active[2], world.paused[2] = 2, true, true
 	handlers.LocalPlayerTurnBegin()
-	assert(not cover.up and #cover.waits[0] == 1 and cover.waits[0][1] == 9)
+	assert(not cover.up and #cover.tailTimes[0] == 1 and cover.tailTimes[0][1] == 0)
 	world.active[2] = false
 	handlers.LocalPlayerTurnEnd()
 	assert(cover.wait.seat == 2)
-	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
-	ticks(handlers, 1)
+	world.pid, world.active[3] = 3, true
 	handlers.LocalPlayerTurnBegin()
-	assert(#cover.waits[2] == 1 and cover.waits[2][1] == 1 and #cover.waits[0] == 1)
+	ticks(handlers, 4)
+	world.active[3] = false
+	handlers.LocalPlayerTurnEnd()
+	ticks(handlers, 1)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.tailTimes[2][1] == 1 and #cover.tailTimes[0] == 1)
+	assert(#cover.lineups[0] == 1 and cover.lineups[0][1] == 1 and cover.lineups[2][1] == 3)
+	assert(cover.seatTimes[1][1] == 9 and cover.seatTimes[3][1] == 4)
 end
 
 print("hotseat_cover_test: ok")
