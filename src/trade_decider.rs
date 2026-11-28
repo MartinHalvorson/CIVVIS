@@ -18,10 +18,12 @@
 //! [`value`] is the valuation: one common unit, Gold now, for every item, from
 //! this seat's board at this moment. [`board`] reads the hotseat deal board
 //! and writes the `deal` order's items; [`answer`] accepts, counters or
-//! rejects a deal proposed to the seat.
+//! rejects a deal proposed to the seat; [`propose`] finds the deal the seat
+//! gains most from that another seat might take.
 
 pub mod answer;
 pub mod board;
+pub mod propose;
 pub mod value;
 
 #[cfg(test)]
