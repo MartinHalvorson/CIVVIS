@@ -1525,9 +1525,11 @@ impl AdvancedAi {
         }
         let threatened = {
             let position = g.units[&uid].pos;
+            // `person-units-threaten-civilians`: a person's soldier binds the
+            // guard at any war state. Off, exactly `is_at_war`.
             g.units.values().any(|unit| {
                 unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
+                    && self.civilian_threat_owner(g, pid, unit.owner)
                     && g.unit_visible_to(unit.id, pid)
                     && g.rules.units[unit.kind].class == "military"
                     && g.rules.units[unit.kind].domain.as_deref() != Some("air")
