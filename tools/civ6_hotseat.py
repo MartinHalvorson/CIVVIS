@@ -2083,6 +2083,98 @@ def notify(title: str, message: str) -> None:
         pass
 
 
+#: An end-turn blocker as the HUD's seat watch names it, in words.
+BLOCKER_WORDS = {
+    "ENDTURN_BLOCKING_UNITS": "a unit waiting for orders",
+    "ENDTURN_BLOCKING_UNIT_PROMOTION": "a unit promotion",
+    "ENDTURN_BLOCKING_PRODUCTION": "a city's production",
+    "ENDTURN_BLOCKING_RESEARCH": "the research choice",
+    "ENDTURN_BLOCKING_CIVIC": "the civic choice",
+    "ENDTURN_BLOCKING_POLICY_SLOT": "a policy slot",
+    "ENDTURN_BLOCKING_FILL_CIVIC_SLOT": "a policy slot",
+    "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT": "a governor appointment",
+    "ENDTURN_BLOCKING_PANTHEON": "the pantheon choice",
+    "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN": "an envoy to send",
+    "ENDTURN_BLOCKING_STACKED_UNITS": "units stacked on one tile",
+}
+
+
+def blocker_words(blocker) -> str:
+    if blocker in (None, "", "NO_ENDTURN_BLOCKING"):
+        return "nothing the game names (no end-turn blocker)"
+    return BLOCKER_WORDS.get(str(blocker), str(blocker))
+
+
+def seat_stuck_line(monitor: "Monitor", event: dict) -> str:
+    """The HUD's `seat_stuck` (CivvisControlHeartbeat.lua `CivvisSeatWatch`): a
+    watched seat's turn that has stood past its limit with its controller
+    beating or not, in words a person can act on."""
+    why = event.get("why")
+    what = {"stub_turn": "past the 30 s a test stub's turn may take",
+            "long_turn": "longer than any CIVVIS turn takes (180 s)"}.get(why, str(why))
+    player = event.get("player")
+    name = monitor.name(player) if isinstance(player, int) else f"seat {player}"
+    waits = [f"the game waits on {blocker_words(event.get('blocker'))}"]
+    if event.get("ready"):
+        waits.append(f"first unit still waiting for orders {event['ready']}")
+    if event.get("locks"):
+        waits.append(f"{event['locks']} event lock(s) held by a screen")
+    if event.get("sent"):
+        waits.append("its end of turn already sent")
+    if event.get("processing"):
+        waits.append("the game still processing messages")
+    if event.get("controller_ran") is False:
+        then = ("No CIVVIS controller has run on this seat, so the HUD leaves the turn alone: "
+                "it waits for a person to play it (Start Turn, then NEXT TURN)")
+    else:
+        then = ("The HUD ends it (every 20 s, up to six times a turn); if it still stands, "
+                "look at the game for a screen waiting on a click and close it")
+    return (f"⚠ turn {event.get('turn')}: {name}'s turn has stood {event.get('age')} s, {what}, "
+            f"its controller quiet {event.get('quiet')} s; " + ", ".join(waits) + f". {then}")
+
+
+def seat_between_line(monitor: "Monitor", event: dict) -> str:
+    """The HUD's `seat_between`: a watched seat that is the local player with its
+    turn not active, and the next seat not begun, for a minute or more."""
+    player = event.get("player")
+    name = monitor.name(player) if isinstance(player, int) else f"seat {player}"
+    state = [f"its end of turn {'sent' if event.get('sent') else 'NOT sent'}",
+             f"game core busy {event.get('busy')}", f"processing messages {event.get('processing')}",
+             f"{event.get('locks') or 0} event lock(s) held by a screen"]
+    return (f"⚠ turn {event.get('turn')}: {name} has been between turns {event.get('between')} s and "
+            f"the next seat has not begun (" + ", ".join(state) + "). Nothing in the game can end a "
+            "turn that is not active: if Civ VI shows a screen, close it; if this is said again a "
+            "minute from now, save from the game menu (Esc), quit, and resume the save (--resume).")
+
+
+def stand_in_stuck_line(monitor: "Monitor", event: dict) -> str:
+    """The test stub's own `stand_in_stuck` (CivvisControlAgent.lua
+    `CivvisSeat.standInStep`): what holds its turn, one line a record."""
+    refusing = []
+    for unit in event.get("refusing") or []:
+        if not isinstance(unit, dict):
+            continue
+        detail = [str(unit.get("activity") or "?"), f"moves {unit.get('moves')}/{unit.get('max')}"]
+        if unit.get("why"):
+            detail.append(str(unit["why"]))
+        refusing.append(f"{unit.get('kind')} {unit.get('id')} ({', '.join(detail)})")
+    held = [f"{lock.get('ctx') or '?'}" + (f" (turn {lock['turn']})" if lock.get("turn") is not None else "")
+            for lock in event.get("held_locks") or [] if isinstance(lock, dict)]
+    parts = [f"the game waits on {blocker_words(event.get('blocker'))}",
+             f"answered {event.get('answered')}"]
+    if refusing:
+        parts.append("refusing every hold: " + "; ".join(refusing))
+    if event.get("visible"):
+        parts.append("screens up: " + ", ".join(str(v) for v in event["visible"]))
+    if held:
+        parts.append("event locks held by: " + ", ".join(held))
+    parts.append(f"end of turn forced {event.get('forced')} time(s), sent {event.get('sent')}")
+    if event.get("game_paused"):
+        parts.append("the game still paused")
+    return (f"⚠ turn {event.get('turn')}: the test stub's turn stands after {event.get('seconds')} s "
+            f"(the stand-in's step {event.get('step')}): " + ", ".join(parts))
+
+
 def ended_at(event: dict) -> dict:
     """When the game said it ended, from the event's own clock (`t`, the
     mod's seconds): the same answer however often the record is read back, so
@@ -2376,6 +2468,19 @@ class Monitor:
         elif kind == "seat_quiet_end_turn":
             self.say(f"turn {event.get('turn')}: the HUD ended seat {event.get('player')}'s quiet "
                      f"turn (asked {event.get('asked')}, request {event.get('forces')})")
+        # The watch's turn-age rule (#6007): a turn that stands though its
+        # controller beats, and a seat stuck between turns.
+        elif kind == "seat_stuck":
+            self.seat_stalls += 1
+            self.say(seat_stuck_line(self, event))
+        elif kind == "seat_stuck_end_turn":
+            how = ("unreadied its end of turn, which the game had dropped, so it is sent again"
+                   if event.get("how") == "unready" else "asked the end of turn by force")
+            self.say(f"turn {event.get('turn')}: the HUD {how} for seat {event.get('player')}'s "
+                     f"stuck turn (asked {event.get('asked')}, request {event.get('forces')})")
+        elif kind == "seat_between":
+            self.seat_stalls += 1
+            self.say(seat_between_line(self, event))
         elif kind == "hotseat_pause_released":
             self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')}'s hand-over pause stood "
                      f"{event.get('waited')} s with no Start Turn on screen; released "
@@ -2480,11 +2585,22 @@ class Monitor:
             # `orders_applied` is the turn's first frame; the orders of its
             # later frames are counted from the `orders` rows below.
             self.say(f"turn {event.get('turn')}: {self.name(seat)} — "
-                     f"{event.get('orders_applied')} opening orders applied "
+                     f"{event.get('orders_applied') or 0} opening orders applied "
                      f"({event.get('orders_source')}), cities {event.get('cities')}, "
                      f"units {event.get('units')}, score {event.get('score')}")
         elif kind == "orders":
             stats["orders_all"] = stats.get("orders_all", 0) + int(event.get("applied") or 0)
+        elif kind == "end_turn_wait":
+            # A turn its own controller had to end by force (`forced` requests).
+            if int(event.get("forced") or 0) > 0:
+                stats["forced_turns"] = stats.get("forced_turns", 0) + 1
+        elif kind == "stand_in_stuck":
+            # The test stub's stand-in stepped in (its first step, then every
+            # 30 s while the turn stands): counted once a turn.
+            stepped = stats.setdefault("stand_in_turns", [])
+            if event.get("turn") not in stepped:
+                stepped.append(event.get("turn"))
+            self.say(stand_in_stuck_line(self, event))
         elif kind == "found":
             stats["found"] += 1
         elif kind == "error":
@@ -2596,7 +2712,12 @@ def smoke_report(monitor: Monitor, log: Log) -> dict:
             f"{stats.get('orders_all') or stats['orders_applied']} orders applied, "
             f"{stats['found']} cities founded, "
             f"now {last.get('cities')} cities / {last.get('units')} units, "
-            f"score {last.get('score')}, source {last.get('orders_source')}")
+            f"score {last.get('score')}, source {last.get('orders_source')}"
+            + (f", {stats['forced_turns']} turns ended by force" if stats.get("forced_turns") else "")
+            + (f", the stand-in stepped in on {len(stats.get('stand_in_turns') or [])} turns"
+               + (f" ({', '.join(str(t) for t in stats['stand_in_turns'][:12])})"
+                  if stats.get("stand_in_turns") else "")
+               if seat == HUMAN_SEAT and monitor.args.auto_human else ""))
     return report
 
 
