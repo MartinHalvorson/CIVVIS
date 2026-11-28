@@ -31,9 +31,10 @@ What goes in, each found rather than listed:
   and the bundle needs no network.
 * The live ladder's two lists, `deploy/live-force-on.txt` (the genes every seat's
   decider is armed with, `--genome live`) and `deploy/live-mod-arms.txt` (the mod's
-  arms), under `deploy/`, from this checkout: the revision the decider is built
-  from with `--build-orders`. Without them a bundle played the bare genome with no
-  mod arms. `selfcheck` proves the bundled decider takes every tag listed.
+  arms), and the hotseat-only genes on top, `deploy/hotseat-force-on.txt`, under
+  `deploy/`, from this checkout: the revision the decider is built from with
+  `--build-orders`. Without them a bundle played the bare genome with no mod arms.
+  `selfcheck` proves the bundled decider takes every tag listed.
 * The self-check's recorded board, `tools/fixtures/hotseat_selfcheck_events.jsonl`.
 * `bundle.json`: revision, platform, tool versions and every input's sha256.
 
@@ -65,7 +66,8 @@ APP = TOOLS / "civvis_hotseat_app.py"
 FIXTURE = TOOLS / "fixtures" / "hotseat_selfcheck_events.jsonl"
 GUIDE = REPO / "docs" / "CIV6_HOTSEAT_RELEASE.md"
 #: The live lists the harness reads (`civ6_hotseat.DEPLOY_DIR`), shipped as `deploy/<name>`.
-DEPLOY = (REPO / "deploy" / "live-force-on.txt", REPO / "deploy" / "live-mod-arms.txt")
+DEPLOY = (REPO / "deploy" / "live-force-on.txt", REPO / "deploy" / "live-mod-arms.txt",
+          REPO / "deploy" / "hotseat-force-on.txt")
 NAME = "civvis-hotseat"
 DEFAULT_WORK = REPO / "target" / "hotseat-bundle"
 ORDERS_NAME = "civvis_orders.exe" if os.name == "nt" else "civvis_orders"
@@ -86,7 +88,7 @@ def mod_files() -> list[Path]:
 
 
 def deploy_files() -> list[Path]:
-    """Both live lists, or the build stops: a bundle without them plays the bare
+    """Every live list, or the build stops: a bundle without them plays the bare
     genome while its log says it plays the ladder's."""
     missing = [str(path.relative_to(REPO)) for path in DEPLOY if not path.is_file()]
     if missing:

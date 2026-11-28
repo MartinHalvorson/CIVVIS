@@ -353,6 +353,27 @@ def hotseat_seat_config(config: dict, seat: int) -> dict:
     return seat_config
 
 
+#: Hotseat only: the leader screen's closer above a UI mod that replaces the same
+#: context. The Workshop mod Quick Deals (2460661464) replaces DiplomacyActionView
+#: at `<LoadOrder>99999</LoadOrder>` (QuickDeals.modinfo `qd_diplomacyactionview`),
+#: and this mod's replacement, with none, lost to it in every hotseat game on this
+#: Mac: a CIVVIS seat's leader screen was closed by nobody. CivvisControlAutoClose.lua
+#: loads Quick Deals' file first where it is installed, so it keeps working.
+#: A single-player install's modinfo is the shipped one.
+HOTSEAT_LOAD_ORDER = 100000
+_LEADER_SCREEN = re.compile(r'(<ReplaceUIScript id="CivvisControlAutoCloseDiplomacyActionView">\s*'
+                            r'<Properties>\n)(\t*)')
+
+
+def hotseat_load_order(text: str) -> str:
+    found = _LEADER_SCREEN.search(text)
+    if found is None:
+        raise SystemExit("CivvisControl.modinfo has no leader-screen closer to order")
+    indent = found.group(2)
+    return (text[:found.end(1)] + f"{indent}<LoadOrder>{HOTSEAT_LOAD_ORDER}</LoadOrder>\n"
+            + text[found.end(1):])
+
+
 def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     """The modinfo for a hotseat install: seat agents, the hand-over screen,
     and with `cover` the person's cover context."""
@@ -370,6 +391,7 @@ def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     listed = "".join(f"\t\t<File>{name}.xml</File>\n\t\t<File>{name}.lua</File>\n"
                      for name in names + ([HOTSEAT_COVER] if cover else []))
     text = text.replace("\t</Files>", listed + "\t</Files>", 1)
+    text = hotseat_load_order(text)
     actions = HOTSEAT_PLAYER_CHANGE + HOTSEAT_EVENT_POPUP + (HOTSEAT_COVER_ACTION if cover else "")
     return text.replace("\t</InGameActions>", actions + "\t</InGameActions>", 1)
 

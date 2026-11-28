@@ -1,0 +1,26 @@
+# Genes armed for a hotseat game a person plays, on top of the live ladder's
+# list (deploy/live-force-on.txt). Read only by tools/civ6_hotseat.py
+# (`hotseat_treatments`) with `--genome live`, the default; never by the ladder.
+# One tag a line; `#` starts a note. A tag the seats' decider does not know is
+# dropped at the start of the game and said in hotseat.log, so add one only
+# once its PR is merged. `--genome stock` plays none of this.
+# Why each is here: ~/civvis-civ6-runs/hotseat/findings/for-launcher.md
+# (2026-11-28, the gameplay lanes' recommendations). None seen in a live game.
+
+# No seat built a Builder by turn 16 while holding 80-117 Gold (gameplay-report item 3).
+gold-buys-the-opening-builder
+# Our civilians are kept from the person's soldiers at any war state: holy's Settler was
+# taken by a Scout and a surprise war at turn 12 (hotseat-gated; #6031).
+person-units-threaten-civilians
+# ...and that Settler was never struck for or taken back (holy, turns 12-16; #6022).
+taken-settler-is-retaken
+# The Science seat had no Writing by turn 16 (moonshot researched Sailing at turn 12; #6023).
+science-seat-writes-first
+# A seat that draws Kupe starts at sea and never founded (#6034; one version of the family only).
+founding-voyage-2
+# Two of p2's three soldiers stood stacked in Krakow, every hold refused, the turn ended
+# by force, turns 15-16 (for-gameplay.md G1; #6020).
+stacked-soldiers-step-apart
+# A delegation, deal or Trader route refused in frame 0 was sent again in the next frame,
+# one more round trip inside the person's wait each time (for-gameplay.md G2; #6024).
+asks-go-once-a-turn

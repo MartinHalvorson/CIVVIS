@@ -238,6 +238,12 @@ impl AdvancedAi {
         if g.are_friends(pid, other) {
             return Some("already a friend");
         }
+        // `refused-friendship-waits`: a major that refused our last ask is
+        // not asked again for ten turns. `false` with the gene off. See
+        // `advanced/refused_friendship_waits.rs`.
+        if self.refused_friendship_waits_for(g, other) {
+            return Some("refused-friendship-waits: they refused our last friendship ask under ten turns ago");
+        }
         if denounced(pid, other) {
             return Some("we have denounced them");
         }

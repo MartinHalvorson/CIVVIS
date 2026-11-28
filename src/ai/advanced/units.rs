@@ -1252,6 +1252,13 @@ impl AdvancedAi {
             self.ordering(OrderStep::Breaker);
             return acted;
         }
+        // `camp-stall-goes-home`: a soldier released from a closed camp's
+        // party walks home while only that camp's guard is near. `None` with
+        // the gene off. See `advanced/camp_stall_goes_home.rs`.
+        if let Some(acted) = self.camp_stall_home_step(g, pid, uid) {
+            self.ordering(OrderStep::Hold);
+            return acted;
+        }
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
@@ -2622,6 +2629,9 @@ impl AdvancedAi {
     }
 
     pub(super) fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // `camp-stall-goes-home`: where this pass begins in the log, for the
+        // watch at its end.
+        let pass_begins = g.log.len();
         // Observes only: see `advanced/last_orders.rs`.
         self.open_unit_orders(g, pid);
         self.builder_support.clear();
@@ -3023,6 +3033,11 @@ impl AdvancedAi {
             );
             cursor = end;
         }
+        // `stacked-soldiers-step-apart`: soldiers of ours the passes above
+        // left on one tile step apart, so the host can take a hold for each.
+        // Nothing with the gene off. See
+        // `advanced/stacked_soldiers_step_apart.rs`.
+        self.step_stacked_soldiers_apart(g, pid);
         // `breaker-walks-under-a-shield`: where the breaker ends our turn,
         // and this turn's strikes beside it. Nothing with the gene off.
         self.breaker_shield_note(g, pid);
@@ -3064,6 +3079,10 @@ impl AdvancedAi {
         // A host-refused step first asks for a detour. Only sites with no
         // remaining route are deferred, and only for the refusal's lifetime.
         self.retire_frozen_settler_targets(g);
+        // `camp-stall-goes-home`: did each camp's party stand beside its
+        // guarded camp this pass, and strike it? Nothing with the gene off.
+        // See `advanced/camp_stall_goes_home.rs`.
+        self.observe_camp_stalls(g, pid, pass_begins);
     }
 
     /// Retain reachable city sites across replans; a remembered refusal must

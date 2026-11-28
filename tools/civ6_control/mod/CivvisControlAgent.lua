@@ -7588,6 +7588,271 @@ CivvisClock.setScale = function(scale)
 	return pcall(function() ExposedMembers.CivvisTimeScale = scale; end);
 end;
 
+-- ★★ HOTSEAT `--fast-animations`: ONE ENGINE SCALE, SIX CONTEXTS, AND EVERY
+-- WAY BACK TO 1. `HotseatFastAnimations` (N, set only by
+-- tools/civ6_hotseat.py) is for running CIVVIS seats' covered turns at the
+-- console's `timescale N`, the command the ladder plays (`startTimescale`,
+-- `debug-timescale-3`), and a person's turn never. The scale is the engine's,
+-- so the whole table shares one (`ExposedMembers.CivvisTimeScale`), while
+-- each seat's agent context keeps its own CivvisClock. So:
+--   * `follow` puts THIS context's clock on a scale another context
+--     commanded, rebased so it never jumps, nothing written. A context whose
+--     seat is not playing still times waits that span other seats' turns (a
+--     deal asked of another seat) on it, so every switch reaches every agent
+--     context at once: by the turn events all of them hear, or by
+--     `LuaEvents.CivvisFastAnimations("follow")`.
+--   * `fastReset` commands `timescale 1`: whichever context gets there first
+--     does, the others find 1 and follow. It is asked for from everywhere a
+--     reason is seen: this seat's context as the last CIVVIS seat before a
+--     person ends its turn, every agent context at a person's
+--     `LocalPlayerTurnBegin` and once after each load, and the cover, the
+--     person's hand-over and the HUD (`CivvisFastAnimations("reset" or
+--     "force", why)`, heard here ungated).
+--   * a reset the console refuses switches the feature off for the rest of the
+--     game (`ExposedMembers.CivvisFastAnim.off`) and says so (`fast_animations`
+--     `reset_failed`); every later reason asks again.
+-- A person's seat here is the person's (`HotseatHumanSeats`) and the test
+-- stub's (`HotseatStubSeats`), which stands in for them. Without the key none
+-- of this is registered: every other install runs exactly as before.
+CivvisClock.fastWant = function()
+	if cfg.Hotseat ~= true or cfg.HotseatCover ~= true then return nil; end
+	local want = tonumber(cfg.HotseatFastAnimations);
+	if want == nil or want ~= want or want <= 1 or want > 4 then return nil; end
+	return want;
+end;
+-- The scale every context reads. Never set reads 1; anything else that is not
+-- a number reads -1, which is not 1: a reset is due.
+CivvisClock.shared = function()
+	local s = try(function() return ExposedMembers.CivvisTimeScale; end, nil);
+	if s == nil then return 1; end
+	return tonumber(s) or -1;
+end;
+CivvisClock.follow = function(scale)
+	scale = tonumber(scale) or CivvisClock.shared();
+	if scale ~= scale or scale < 1 or scale > 8 or scale == CivvisClock.scale then return false; end
+	local ui = CivvisClock.raw();
+	if ui ~= nil then
+		CivvisClock.offset = ui / CivvisClock.scale + CivvisClock.offset - ui / scale;
+	end
+	CivvisClock.scale = scale;
+	return true;
+end;
+-- The table's own record of it: `on` while a covered turn runs scaled, `off`
+-- (why) once it stood down for the game, and counts. nil with no shared table.
+CivvisClock.fastState = function()
+	return try(function()
+		local st = ExposedMembers.CivvisFastAnim;
+		if type(st) ~= "table" then
+			st = { on = false, applied = 0, resets = 0, failed = 0 };
+			ExposedMembers.CivvisFastAnim = st;
+		end
+		return st;
+	end, nil);
+end;
+CivvisClock.personSeat = function(pid)
+	pid = tonumber(pid);
+	if pid == nil then return false; end
+	for _, list in ipairs({ cfg.HotseatHumanSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end;
+-- Whether the seat that plays after `pid` is a person's: hotseat seats play
+-- one by one by player number, and a dead seat is skipped. Unknown is yes,
+-- the reset being the safe side.
+CivvisClock.nextIsPerson = function(pid)
+	pid = tonumber(pid);
+	local seats, seen = {}, {};
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatHumanSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			seat = tonumber(seat);
+			if seat ~= nil and not seen[seat] then seen[seat], seats[#seats + 1] = true, seat; end
+		end
+	end
+	if pid == nil or #seats == 0 then return true; end
+	table.sort(seats);
+	local first = 1;
+	for i, seat in ipairs(seats) do
+		if seat > pid then first = i; break; end
+	end
+	for step = 0, #seats - 1 do
+		local seat = seats[(first - 1 + step) % #seats + 1];
+		if seat ~= pid and try(function() return Players[seat]:IsAlive(); end, nil) ~= false then
+			return CivvisClock.personSeat(seat);
+		end
+	end
+	return true;
+end;
+-- `quiet`: asked from inside an event every agent context hears, whose other
+-- listeners follow by themselves. `force`: commanded even where the shared
+-- scale already reads 1 (the HUD saw the clock run fast anyway).
+CivvisClock.fastReset = function(why, quiet, force)
+	local st = CivvisClock.fastState() or {};
+	if not force and CivvisClock.shared() == 1 and st.on ~= true then
+		CivvisClock.follow(1);
+		return true;
+	end
+	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale 1"); end);
+	if ran then
+		pcall(function() ExposedMembers.CivvisTimeScale = 1; end);
+		st.on, st.resets = false, (st.resets or 0) + 1;
+		CivvisClock.follow(1);
+	else
+		st.failed, st.off = (st.failed or 0) + 1, st.off or "reset_failed";
+	end
+	-- `ui` and `scale` on every switch: `tools/hotseat_wait.py` turns the UI
+	-- clock back into seconds with them.
+	emit("fast_animations", { phase = ran and "off" or "reset_failed", why = tostring(why),
+		scale = ran and 1 or CivvisClock.shared(), ui = CivvisClock.stamp(), result = tostring(result),
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		player = try(function() return Game.GetLocalPlayer(); end, -1), off = st.off });
+	if ran and not quiet then
+		pcall(function() LuaEvents.CivvisFastAnimations("follow", why); end);
+	end
+	return ran;
+end;
+-- The listeners, ungated (the scale is the table's, not this seat's).
+CivvisClock.fastHeard = function(op, why)
+	if op == "reset" or op == "force" then
+		CivvisClock.fastReset(why, true, op == "force");
+	else
+		CivvisClock.follow();
+	end
+end;
+-- Any seat's turn begins: a person's at 1, whatever ran before it.
+CivvisClock.fastTurnBegin = function()
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if CivvisClock.personSeat(pid) then
+		CivvisClock.fastReset("person_turn_begin", true);
+		return;
+	end
+	-- This seat's own turn: the one way up (`fastApply`). Another seat's: follow.
+	if pid == CivvisSeat.seat then
+		CivvisClock.fastApply(pid);
+		return;
+	end
+	CivvisClock.follow();
+end;
+-- This seat's turn ends: the last CIVVIS seat before a person puts it back,
+-- unless `HotseatFastRollover` (`--fast-animations-rollover`) keeps it through
+-- the game's own processing after it (barbarians, city-states, the autosave):
+-- then the person's `LocalPlayerTurnBegin` is the first reset.
+CivvisClock.fastTurnEnd = function()
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid ~= CivvisSeat.seat or CivvisClock.personSeat(pid) or not CivvisClock.nextIsPerson(pid)
+			or cfg.HotseatFastRollover == true then
+		return;
+	end
+	CivvisClock.fastReset("last_seat_end");
+end;
+-- A game started or loaded: this context has commanded nothing yet and the
+-- engine's scale outlives a load inside one Civ VI (a console setting, not
+-- the save's), so it is set to 1 once, whatever the shared table says.
+CivvisClock.fastLoaded = function()
+	if CivvisClock.fastFresh then return; end
+	CivvisClock.fastFresh = true;
+	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale 1"); end);
+	local st = CivvisClock.fastState() or {};
+	if ran then
+		pcall(function() ExposedMembers.CivvisTimeScale = 1; end);
+		st.on = false;
+		CivvisClock.follow(1);
+	else
+		st.failed, st.off = (st.failed or 0) + 1, st.off or "reset_failed";
+	end
+	emit("fast_animations", { phase = ran and "loaded" or "reset_failed", why = "load",
+		scale = ran and 1 or CivvisClock.shared(), ui = CivvisClock.stamp(), result = tostring(result),
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1), off = st.off });
+end;
+
+-- ★★ ...AND THE ONE WAY UP: A CIVVIS SEAT'S OWN TURN, UNDER THE COVER. At this
+-- seat's `LocalPlayerTurnBegin` (its hand-over is up and the game paused for
+-- it; nothing has moved), the console's `timescale N` is commanded here, the
+-- way the ladder's `startTimescale` does, only when every one of these holds
+-- (`fastBlocked` names the first that does not):
+--   * the turn is this context's seat's, and that seat is CIVVIS's: not a
+--     person's (`HotseatHumanSeats`), not the test stub's;
+--   * the person-facing install's harness is live (`RequireHarness`);
+--   * the feature has not stood down for this game (a refused reset, the HUD's
+--     clock reading);
+--   * the cover is up (`ExposedMembers.CivvisCoverUp`, which the cover writes
+--     as it is queued and taken down: a cover that stood aside for a stalled
+--     seat is down, so the person looking at the game sees it at 1);
+--   * neither the game menu nor an end screen is in the popup queue
+--     (InGame.xml's `TopOptionsMenu` and `EndGameMenu`, read as the cover
+--     reads them);
+--   * the ladder's own timescale is not running (`CivvisQueue.timescale`).
+-- A blocked seat whose table still reads N is put back to 1 on the spot. The
+-- other contexts follow (`CivvisFastAnimations("follow")`). It stays N across
+-- the CIVVIS seats that follow (each one's begin finds N and follows) until
+-- the last CIVVIS seat's turn ends (`fastTurnEnd`), or, with
+-- `HotseatFastRollover`, through the game's own rollover after it until the
+-- person's `LocalPlayerTurnBegin`.
+CivvisClock.fastQueued = function(path)
+	return try(function()
+		local context = ContextPtr:LookUpControl(path);
+		return context ~= nil and UIManager:IsInPopupQueue(context) == true;
+	end, false) == true;
+end;
+CivvisClock.fastBlocked = function(pid)
+	if pid ~= CivvisSeat.seat then return "not_this_seat"; end
+	local civvis = false;
+	for _, seat in ipairs(cfg.HotseatSeats or {}) do
+		if tonumber(seat) == pid then civvis = true; end
+	end
+	if not civvis or CivvisClock.personSeat(pid) then return "person_seat"; end
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return "no_harness"; end
+	local st = CivvisClock.fastState();
+	if st == nil then return "no_shared_table"; end
+	if st.off ~= nil then return "stood_down"; end
+	if try(function() return ExposedMembers.CivvisCoverUp; end, nil) ~= true then return "not_covered"; end
+	if CivvisClock.fastQueued("/InGame/TopOptionsMenu") then return "menu"; end
+	if CivvisClock.fastQueued("/InGame/EndGameMenu") then return "end_screen"; end
+	if CivvisQueue ~= nil and CivvisQueue.timescale ~= nil then return "ladder_timescale"; end
+	return nil;
+end;
+CivvisClock.fastApply = function(pid)
+	local want = CivvisClock.fastWant();
+	if want == nil then return false; end
+	local why = CivvisClock.fastBlocked(pid);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if why ~= nil then
+		if CivvisClock.shared() ~= 1 then CivvisClock.fastReset("blocked_" .. why); end
+		emit("fast_animations", { phase = "held", why = why, turn = turn, player = pid,
+			ui = CivvisClock.stamp() });
+		return false;
+	end
+	local st = CivvisClock.fastState();
+	if CivvisClock.shared() == want then
+		st.on = true;
+		CivvisClock.follow(want);
+		return true;
+	end
+	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale " .. tostring(want)); end);
+	if not ran then
+		st.failed, st.off = (st.failed or 0) + 1, st.off or "apply_failed";
+		emit("fast_animations", { phase = "apply_failed", why = "seat_turn_begin", scale = 1, turn = turn,
+			player = pid, ui = CivvisClock.stamp(), result = tostring(result), off = st.off });
+		return false;
+	end
+	pcall(function() ExposedMembers.CivvisTimeScale = want; end);
+	st.on, st.applied = true, (st.applied or 0) + 1;
+	-- The command and the shared scale land in one call; a table that does not
+	-- read N now would leave every other clock wrong: back to 1, and stand down.
+	if CivvisClock.shared() ~= want then
+		st.off = st.off or "scale_not_shared";
+		CivvisClock.fastReset("scale_not_shared", false, true);
+		return false;
+	end
+	CivvisClock.follow(want);
+	emit("fast_animations", { phase = "on", why = "seat_turn_begin", scale = want, turn = turn,
+		player = pid, ui = CivvisClock.stamp(), result = tostring(result) });
+	pcall(function() LuaEvents.CivvisFastAnimations("follow", "applied"); end);
+	return true;
+end;
+
 CivvisExportClock = { marks = nil };
 CivvisExportClock.now = function()
 	-- Asked before called: the live context has neither, and a raise per export
@@ -14277,7 +14542,28 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 		verb = session.verb, action = session.action, id = session.id, round = session.round,
 		session = sessionID or -1, sent = sent, why = why,
 		pending_from_them = theirs, pending_from_us = ours });
+	if sent and CivvisTrade.seatKind(other) == "person" then
+		pcall(CivvisTrade.seatNote, pid, other, session, turn);
+	end
 	CivvisTrade.close(pid, other, sent and "hotseat_sent" or "hotseat_not_sent");
+end;
+-- ★ THE PERSON HEARS WHAT A CIVVIS SEAT DID WITH THEIR DEAL (hotseat). The
+-- answer is sent on the seat's own turn, under the cover, and nothing in the
+-- shipped game tells the person who proposed it (a pending deal to a human
+-- is seen only by opening that leader, DiplomacyDealView.lua:1145/:1172). So
+-- each answer the person is owed goes into `ExposedMembers.CivvisDealNotes`
+-- (UI contexts share it), and CivvisHotseatCover.lua puts it on the cover:
+-- "TouristTrap accepted your deal." The last 8 only, numbered (`n`).
+CivvisTrade.seatNote = function(pid, other, session, turn)
+	local notes = ExposedMembers.CivvisDealNotes;
+	if type(notes) ~= "table" then
+		notes = { n = 0 };
+		ExposedMembers.CivvisDealNotes = notes;
+	end
+	notes.n = (tonumber(notes.n) or 0) + 1;
+	notes[#notes + 1] = { n = notes.n, seat = pid, to = other, verb = session.verb,
+		turn = turn, id = session.id };
+	while #notes > 8 do table.remove(notes, 1); end
 end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
@@ -23437,6 +23723,32 @@ CivvisQueue.drain = function(player, pid, turn)
 							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
 							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
 							released = release });
+					-- ★ HOTSEAT: A WALK THE HOST DROPPED IS ANSWERED AT THE PROBE TOO.
+					-- The owner's game hotseat-20261128T045523Z, p4 turn 32: a Scout's
+					-- frame-1 MOVE_TO onto a plot a hostile unit held was accepted,
+					-- and the Scout stood on its origin, `awake` (NOT in an
+					-- operation), all three moves left, its path four plots that
+					-- reach the plot, until the 30-tick grace's `move_noop`
+					-- (`hostile_on_plot`): 6.9 s of the person's wait for an answer
+					-- the probe tick could give. Not in an operation, the request is
+					-- gone (G113: 464 of 525 such no-ops sat awake or sentry; a
+					-- MOVE_TO the host takes runs as ACTIVITY_OPERATION), and nothing
+					-- has stepped or spent a move: the same early no-op as an
+					-- unpathed walk, with the same switch the ladder's stalled-
+					-- operation release has, in a hotseat game only.
+					elseif probeTick and not unpathed and not spentNow and cfg.Hotseat == true
+							and cfg.StalledOperationRelease == true and attempt ~= nil and attempt.turn == turn
+							and attempt.moves ~= nil and moves ~= nil and moves >= attempt.moves
+							and ActivityTypes.ACTIVITY_OPERATION ~= nil
+							and try(function()
+								local activity = UnitManager.GetActivityType(unit);
+								return activity ~= nil and activity ~= ActivityTypes.ACTIVITY_OPERATION;
+							end, false) == true then
+						unpathed = true;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = true, awake = true });
 					end
 				end
 				if entry.stall_probe ~= nil and not entry.stall_resolved and entry.origin ~= nil then
@@ -30172,6 +30484,74 @@ end;
 -- per 50 ms shared with the publish-batch path, nothing at all unless a CIVVIS
 -- board is out. A hit ticks with the forced poll, exactly as a batch hit does.
 -- `orders_peek_wake` says how long the controller had gone without a tick.
+--
+-- ★★ HOTSEAT `--fast-turns`: A SEAT WAITING FOR ITS NEXT TICK GETS IT FROM
+-- THIS PULSE, NOT FROM THE NEXT SIXTEENTH PUBLISH BATCH. Two waits in every
+-- CIVVIS seat-turn are for nothing but a tick (hotseat-20261128T045523Z, the
+-- owner's 33 turns, `tools/hotseat_wait.py`): Start Turn pressed -> the
+-- opening board exported, median 78 ms at turns 1-10 and 166 ms at 21-32
+-- (0.87 s a round of five seats), every export in the first tick after the
+-- press; and an answer applied -> the tick that ends the turn or opens the
+-- next frame, which `settleTurn` defers on purpose ("one more tick"): after
+-- an answer that moved nothing it took 156-200 ms (median, 68 closes), one
+-- whole tick period, as `orders_peek_wake.since_tick` reads it (median
+-- 71-112 ms after the board, no tick in between). So, behind `--fast-turns`
+-- (`HotseatFastTurns`), the pulse ticks a seat whose turn is active and
+-- unpaused, at most twice per wait (`PULSE_TICKS`), in exactly two states:
+--   * `open`: the turn is not yet opened (`lastTurnSeen`). The shipped hand-
+--     over unpauses by a message after Start Turn (PlayerChange.lua:54-57,
+--     `SetPause(false)` -> `SetWantsPause` + `Network.BroadcastPlayerInfo()`),
+--     and the shipped unit panel waits for `GameConfiguration.IsPaused()` to
+--     read false before it acts (UnitPanel.lua:2845-2858); so does this.
+--   * `settle`: the frame's answer is applied and nothing it started is in
+--     flight: no queued or watched unit (`pendingCount`), no ranged shot
+--     waiting for its fight (`pendingStrikes`), and no end turn asked yet.
+-- Never while a unit walks or a shot flies: the queue's and the shot's waits
+-- are counted in ticks (the idle probe at 2, the no-op probe at 8, the grace
+-- at 30), and a faster tick would shorten every one of them. Those still
+-- move on the host's own unit events and the publish batches, as before.
+-- Every other install never reaches it. `pulse_tick` says when it ticked.
+CivvisQueue.PULSE_TICKS = 2;
+CivvisQueue.pulseTickDue = function()
+	-- `started`: the seat is claimed and the actions resolved (`ensureStarted`).
+	if not started or cfg.Hotseat ~= true or cfg.HotseatFastTurns ~= true
+			or CivvisBoard.hold.pacing then
+		return false;
+	end
+	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
+	if turn < 0 or try(function() return GameConfiguration.IsPaused(); end, true) ~= false
+			or try(function() return Players[Game.GetLocalPlayer()]:IsTurnActive(); end, false) ~= true then
+		return false;
+	end
+	local why;
+	if turn ~= lastTurnSeen then
+		why = "open";
+	elseif awaiting.turn == turn and awaiting.done and CivvisQueue.pendingCount() == 0
+			and CivvisQueue.endTurnSubmittedTurn ~= turn then
+		for _, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+			if shot.turn == turn then return false; end
+		end
+		why = "settle";
+	else
+		return false;
+	end
+	local frame = why == "open" and 0 or (awaiting.frame or 0);
+	local key = why .. ":" .. tostring(turn) .. ":" .. tostring(frame);
+	local spent = CivvisQueue.pulseSpent;
+	if spent == nil or spent.key ~= key then
+		spent = { key = key, n = 0 };
+		CivvisQueue.pulseSpent = spent;
+	end
+	if spent.n >= CivvisQueue.PULSE_TICKS then return false; end
+	spent.n = spent.n + 1;
+	local now, last = CivvisClock.now(), CivvisQueue.lastTickAt;
+	emit("pulse_tick", {
+		turn = turn, frame = frame, why = why, n = spent.n, ui = CivvisClock.stamp(),
+		since_tick = (type(now) == "number" and type(last) == "number")
+			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
+	});
+	return true;
+end;
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
 	-- Orders the brain wrote for a held turn stay landed until it resumes; the
@@ -30185,6 +30565,7 @@ CivvisQueue.onPeekPulse = function()
 		tick();
 		return;
 	end
+	if CivvisQueue.pulseTickDue() then tick(); return; end
 	if not CivvisQueue.ordersLanded() then return; end
 	-- A turn held to the watch pace: tick quietly until its wait is up.
 	if CivvisBoard.hold.pacing then tick(); return; end
@@ -31249,6 +31630,16 @@ function Initialize()
 	-- Hotseat: the end screen's "Just One More Turn" (`CivvisSeat.oneMoreTurn`).
 	if cfg.Hotseat == true then
 		pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn); end);
+	end
+	-- Hotseat `--fast-animations` (`CivvisClock.fastWant`): the engine's scale
+	-- is the table's, so every seat's context hears these, ungated.
+	if cfg.Hotseat == true and CivvisSeat.seat ~= nil and CivvisClock.fastWant() ~= nil then
+		pcall(function() Events.LocalPlayerTurnBegin.Add(function() pcall(CivvisClock.fastTurnBegin); end); end);
+		pcall(function() Events.LocalPlayerTurnEnd.Add(function() pcall(CivvisClock.fastTurnEnd); end); end);
+		pcall(function() Events.LoadScreenClose.Add(function() pcall(CivvisClock.fastLoaded); end); end);
+		pcall(function()
+			LuaEvents.CivvisFastAnimations.Add(function(op, why) pcall(CivvisClock.fastHeard, op, why); end);
+		end);
 	end
 	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.wire(); end
 end

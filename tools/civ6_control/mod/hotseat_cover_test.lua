@@ -99,6 +99,8 @@ local function load(config)
 			WaitFill = { SetSizeX = function(self, x) did.bar.width = x end,
 			             SetOffsetX = function(self, x) did.bar.offset = x end },
 			WaitText = { SetText = function(self, text) did.bar.text = text end },
+			Note = { SetText = function(self, text) did.note = text end,
+			         SetHide = function(self, hide) did.noteHidden = hide end },
 		},
 		Mouse = { eLClick = 1 },
 		KeyEvents = { KeyDown = 1, KeyUp = 2 },
@@ -434,12 +436,85 @@ do
 	handlers.LocalPlayerTurnBegin()
 	ticks(handlers, 11)
 	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"person_wait"', 1, true))
-	-- And the person's turn running unpaused is theirs at once, however it began.
+	-- And the person's turn running unpaused is theirs at once, in a game
+	-- just loaded (no turn event yet says otherwise).
 	local cover2, world2, did2, handlers2 = load(HOTSEAT())
-	handlers2.LocalPlayerTurnEnd()
-	world2.active[0] = true
+	world2.pid, world2.turn, world2.active[0], world2.paused[0] = 0, 7, true, true
+	handlers2.LoadScreenClose()
+	assert(cover2.up, "covered over their hand-over")
+	world2.paused[0] = false
 	handlers2.update(0.1)
 	assert(not cover2.up and last(did2, "hotseat_cover"):find('"reason":"person_turn"', 1, true))
+end
+-- ★ The person has pressed Next Turn: the cover HOLDS while the game still
+-- reads their turn as active (the end of turn is the game core's to register).
+-- Live 2026-11-27/28, twice: it lifted 18-38 ms after the end of turn, a second
+-- click un-ended the turn, the same turn began again, and Civ VI was gone
+-- within ten seconds.
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 18, true, false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up and did.dequeued == 0)
+	-- Frame after frame the game still says "active, not paused": not theirs.
+	for _ = 1, 40 do
+		handlers.update(0.1)
+		assert(cover.up and did.dequeued == 0, "the cover holds: no instant lift")
+	end
+	assert(#kinds(did, "hotseat_cover") == 1, "one record: up at the end of turn")
+	-- The game registers the end; seat 1 plays; their next turn comes: as ever.
+	world.active[0] = false
+	ticks(handlers, 1)
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 2)
+	assert(cover.up)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 19, true, true
+	handlers.LocalPlayerTurnBegin()
+	world.paused[0] = false
+	handlers.PlayerChange_Close(0)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"person_start"', 1, true))
+end
+-- Never a trap: still theirs five seconds after its end, with no event either
+-- way, is theirs after all. And a turn the game hands back to them with a
+-- turn-begin event (un-ended, or a special phase) is theirs at once.
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 18, true, false
+	handlers.LocalPlayerTurnEnd()
+	for _ = 1, 49 do handlers.update(0.1) end
+	assert(cover.up, "4.9 s: still held")
+	handlers.update(0.2)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"person_turn"', 1, true),
+		"5 s: theirs after all")
+	-- A longer limit is the config's to set.
+	local cover2, world2, did2, handlers2 = load(HOTSEAT({ HotseatCoverLingerSeconds = 20 }))
+	world2.pid, world2.active[0] = 0, true
+	handlers2.LocalPlayerTurnEnd()
+	ticks(handlers2, 19)
+	assert(cover2.up)
+	ticks(handlers2, 2)
+	assert(not cover2.up)
+	-- Handed back with a turn-begin event, paused behind its hand-over, then started.
+	local cover3, world3, did3, handlers3 = load(HOTSEAT())
+	world3.pid, world3.turn, world3.active[0] = 0, 18, true
+	handlers3.LocalPlayerTurnEnd()
+	handlers3.update(0.1)
+	assert(cover3.up)
+	world3.paused[0] = true
+	handlers3.LocalPlayerTurnBegin()
+	assert(cover3.up, "covered over the hand-over that came back")
+	world3.paused[0] = false
+	handlers3.update(0.1)
+	assert(not cover3.up and last(did3, "hotseat_cover"):find('"reason":"person_turn"', 1, true),
+		"a turn begun again is theirs at once")
+	-- A new end of turn starts the count afresh.
+	world3.active[0] = true
+	handlers3.LocalPlayerTurnEnd()
+	for _ = 1, 30 do handlers3.update(0.1) end
+	assert(cover3.up)
 end
 
 -- 6. The end of the game, and a quit, are never covered. ---------------------
@@ -1343,6 +1418,47 @@ do
 	world3.turn, world3.pid, world3.active[0], world3.paused[0] = 2, 0, true, false
 	handlers3.LocalPlayerTurnBegin()
 	assert(world3.crisisQueued and did3.dropped == 0, "the person saw that turn; it is as it ships")
+end
+
+-- The person is told what a CIVVIS seat did with their deal: the seat's agent
+-- writes `ExposedMembers.CivvisDealNotes` (CivvisControlAgent.lua
+-- `CivvisTrade.seatNote`), the cover shows the newest one for the person.
+do
+	local cover, world, did, handlers, env = load(HOTSEAT())
+	world.active[0] = true
+	handlers.LocalPlayerTurnEnd()
+	world.active[0] = false
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up)
+	env.ExposedMembers.CivvisDealNotes = { n = 3,
+		{ n = 1, seat = 1, to = 0, verb = "REJECT", turn = 4 },
+		{ n = 2, seat = 1, to = 0, verb = "SHRUG", turn = 4 },    -- no words for it
+		{ n = 3, seat = 1, to = 2, verb = "ACCEPT", turn = 4 } }  -- to another seat
+	ticks(handlers, 1)
+	assert(did.note == "CIVVIS jack 1 turned down your deal.", tostring(did.note))
+	assert(did.noteHidden == false)
+	local said = kinds(did, "hotseat_cover_deal_note")
+	assert(#said == 1 and said[1]:find('"seat":1,"to":0,"verb":"REJECT"', 1, true), said[1])
+	ticks(handlers, 3)
+	assert(#kinds(did, "hotseat_cover_deal_note") == 1, "said once")
+	-- A newer answer takes its place.
+	table.insert(env.ExposedMembers.CivvisDealNotes, { n = 4, seat = 2, to = 0, verb = "ACCEPT", turn = 4 })
+	ticks(handlers, 1)
+	assert(did.note == "CIVVIS jack 2 accepted your deal.", tostring(did.note))
+	-- Read through their turn; gone once it ends.
+	world.pid, world.active[1], world.active[0] = 0, false, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+	assert(did.note == "CIVVIS jack 2 accepted your deal.", "still there as their turn starts")
+	handlers.LocalPlayerTurnEnd()
+	assert(did.note == "" and did.noteHidden == true, "cleared when their turn ends")
+	-- No notes at all: nothing.
+	local cover2, world2, did2, handlers2 = load(HOTSEAT())
+	world2.active[0] = true
+	handlers2.LocalPlayerTurnEnd()
+	ticks(handlers2, 2)
+	assert(did2.note == nil and #kinds(did2, "hotseat_cover_deal_note") == 0)
 end
 
 print("hotseat_cover_test: ok")

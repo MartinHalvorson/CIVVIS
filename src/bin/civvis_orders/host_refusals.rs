@@ -83,6 +83,10 @@ pub(super) struct HostMoveRefusals {
     /// as a war starter (`closed_ground::Ledger::closed_on`), for the reply's
     /// note only; the ledger itself closes them on the board.
     pub(super) closed_fog_plots: usize,
+    /// `asks-go-once-a-turn`: the diplomatic asks, deals and Trader routes
+    /// already sent this host turn. Empty with the gene off. See
+    /// `asks_once_a_turn`.
+    pub(super) asks: asks_once_a_turn::Asks,
 }
 
 #[derive(Clone, Copy)]

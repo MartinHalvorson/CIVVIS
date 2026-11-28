@@ -72,9 +72,13 @@ for line in init:gmatch("[^\n]+") do
 		-- A second: the answer to this seat's own deal proposal is made on the
 		-- other seat's turn, so `CivvisTrade.seatHeard` hears it ungated and
 		-- only writes it down (checked below; hotseat_deals_test.lua).
+		-- A third: `--fast-animations` keeps the engine's one timescale and
+		-- every seat's clock on it (`CivvisClock.fast*`), whoever is local;
+		-- those listeners only move clocks (checked below).
 		assert(line:find("CivvisSeat.gate(", 1, true)
 			or line:find("LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn)", 1, true)
-			or line:find("Events.DiplomacyIncomingDeal.Add(CivvisTrade.seatHeard)", 1, true),
+			or line:find("Events.DiplomacyIncomingDeal.Add(CivvisTrade.seatHeard)", 1, true)
+			or line:match("pcall%(CivvisClock%.fast%a+[,)]"),
 			"an Initialize registration skips the seat gate: " .. line)
 	end
 end
@@ -88,6 +92,26 @@ local resume = assert(agent:match("\nfunction CivvisSeat%.oneMoreTurn%(%)\n(.-)\
 for call in resume:gmatch("([%w_%.:]+)%(") do
 	assert(call == "function" or call == "emit" or call == "try" or call:match("^Game%.Get"),
 		"the ungated one-more-turn handler only clears its own stop: it calls " .. call)
+end
+-- The ungated timescale listeners and what they reach: the scale, the clocks,
+-- their own records. Nothing that plays a seat.
+local CLOCK_CALLS = { ["function"] = true, try = true, pcall = true, emit = true, tostring = true,
+	tonumber = true, ipairs = true, type = true, ["table.sort"] = true,
+	["AutoProfiler.RunCommand"] = true, ["LuaEvents.CivvisFastAnimations"] = true,
+	["Players[seat]:IsAlive"] = true,
+	-- `fastBlocked` reads the popup queue and the person-facing harness.
+	["ContextPtr:LookUpControl"] = true, ["UIManager:IsInPopupQueue"] = true,
+	["CivvisHarness.live"] = true }
+for _, name in ipairs({ "fastWant", "shared", "follow", "fastState", "personSeat", "nextIsPerson",
+		"fastReset", "fastHeard", "fastTurnBegin", "fastTurnEnd", "fastLoaded",
+		"fastQueued", "fastBlocked", "fastApply" }) do
+	local body = assert(agent:match("\nCivvisClock%." .. name .. " = function%([^)]*%)\n(.-)\nend;\n"),
+		"CivvisClock." .. name .. " is defined")
+	for call in body:gmatch("([%w_%.:%[%]]+)%(") do
+		-- `seats[(...)]` is an index, not a call.
+		assert(call:sub(-1) == "[" or CLOCK_CALLS[call] or call:match("^CivvisClock%.") or call:match("^Game%.Get"),
+			"the ungated timescale listener CivvisClock." .. name .. " only moves clocks: it calls " .. call)
+	end
 end
 assert(adds >= 6, "found " .. adds .. " registrations in Initialize")
 assert(agent:find('LuaEvents.CivvisCongressBallot.Add(CivvisSeat.gate(function() castBallot("popup"); end));', 1, true),
