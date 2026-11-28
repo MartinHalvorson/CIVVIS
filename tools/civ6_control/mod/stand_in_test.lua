@@ -436,7 +436,7 @@ end
 do
 	local gateBlock = assert(agent:match("(CivvisSeat = { seat = .-\nfunction CivvisSeat%.gate.-\nend\n)"),
 		"the agent defines CivvisSeat.mine and CivvisSeat.gate")
-	local g = { pid = 0, wants = false, corePaused = true, stub = true }
+	local g = { pid = 0, wants = false, corePaused = true, stub = true, active = true }
 	local env = {
 		cfg = { HotseatSeat = 0 }, tonumber = tonumber, type = type, pcall = pcall,
 		Game = { GetLocalPlayer = function() return g.pid end },
@@ -444,6 +444,9 @@ do
 			return { GetWantsPause = function() return g.wants end }
 		end }),
 		GameConfiguration = { IsPaused = function() return g.corePaused end },
+		Players = setmetatable({}, { __index = function()
+			return { IsTurnActive = function() return g.active end }
+		end }),
 	}
 	local chunk = assert(loadstring(gateBlock))
 	setfenv(chunk, env)
@@ -454,6 +457,9 @@ do
 	assert(seat.mine() == false, "the stand-in waits while the game is still paused")
 	g.corePaused = false
 	assert(seat.mine() == true, "and plays once it is not")
+	g.corePaused, g.active = true, false
+	assert(seat.mine() == true, "its turn over, the next seat's pause does not hold its turn-end bookkeeping")
+	g.corePaused, g.active = false, true
 	g.wants = true
 	assert(seat.mine() == false, "its own pause still closes it")
 	g.wants, g.corePaused, g.stub = false, true, false

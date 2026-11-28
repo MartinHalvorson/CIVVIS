@@ -63,9 +63,12 @@ function CivvisSeat.mine()
 	-- ignored due to game paused.`, and the stub's turn stood 14 minutes.
 	-- The shipped unit panel waits the same way after the hand-over closes
 	-- (UnitPanel.lua:2843-2858, `GameConfigChanged` until `not
-	-- GameConfiguration.IsPaused()`).
+	-- GameConfiguration.IsPaused()`). Only while its turn is active: its
+	-- `LocalPlayerTurnEnd` bookkeeping runs as the next seat's hand-over pauses.
 	if not held and CivvisSeat.standsIn ~= nil and CivvisSeat.standsIn() then
-		pcall(function() held = GameConfiguration.IsPaused() == true; end);
+		pcall(function()
+			held = GameConfiguration.IsPaused() == true and Players[pid]:IsTurnActive() == true;
+		end);
 	end
 	return not held;
 end
