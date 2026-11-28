@@ -86,6 +86,30 @@ class HotseatConfigTest(unittest.TestCase):
         self.assertIn("--github-cache /r/runtime-cache", joined)
         # jack is the deployment genome, which civvis_orders plays unasked.
         self.assertNotIn("--strategy", command)
+        self.assertNotIn("--poll-seconds", command, "the worker's own 25 ms unless asked")
+
+    def test_fast_turns_has_each_worker_and_the_relay_read_every_10_ms(self) -> None:
+        self.assertIsNone(hotseat.poll_seconds(game_args()))
+        self.assertEqual(hotseat.relay_seconds(game_args()), 0.02)
+        fast = game_args(fast_turns=True)
+        self.assertEqual((hotseat.poll_seconds(fast), hotseat.relay_seconds(fast)), (0.01, 0.01))
+        command = hotseat.brain_command(Path("/r/hs-p2"), Path("/r/o.sqlite"),
+                                        Path("/r/civvis_orders"), "civvis", poll_s=0.01)
+        self.assertEqual(command[-2:], ["--poll-seconds", "0.01"])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(hotseat.subprocess, "Popen") as popen, \
+                patch.object(hotseat, "stop_stale_worker", return_value=None):
+            popen.return_value.pid = 4242
+            brains = hotseat.Brains(Path(tmp), "hs", [1], Path(tmp) / "o.sqlite",
+                                    Path("/r/civvis_orders"), "civvis", lambda *_: None,
+                                    poll_s=hotseat.poll_seconds(fast))
+            brains.start(1)
+            self.assertEqual(popen.call_args.args[0][-2:], ["--poll-seconds", "0.01"],
+                             "a started worker is given it")
+        # Both relay loops (the started game's and the manual lobby's) ask the table's own.
+        source = Path(hotseat.__file__).read_text()
+        self.assertEqual(source.count("relay_for(bridges, read_s=relay_seconds(args))"), 2)
+        self.assertEqual(source.count("brains.poll_s = poll_seconds(args)"), 2)
 
     def test_an_explicit_binary_must_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
