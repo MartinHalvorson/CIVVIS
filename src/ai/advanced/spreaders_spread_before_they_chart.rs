@@ -34,8 +34,44 @@
 //!   looking for them ([`AdvancedAi::scouts_left_to_the_seekers`]). The
 //!   surplus clause (a corps far past its known work) is untouched.
 //!
+//! **Version two (`spreaders-spread-before-they-chart-2`, 2026-11-27).**
+//! With version one armed the reviewer still named the mistake in 35 of 40
+//! Lv 8 games, and the gene fired in them (its "waits for the city" line is
+//! in the journals). Replayed, the corps was still searching instead of
+//! spreading, because three searches each take their own share and none
+//! counts the others:
+//! - t8-20261127T064630Z at t90: seven spreaders, five known rival cities
+//!   owed. Three Missionaries on their last charge scouted the fog
+//!   (`last-charge-joins-the-army`), two seekers looked for the unseen and
+//!   under-charted rivals, one waited on its held march, and none spread.
+//!   The seekers were the two farthest from home, which were the corps' full
+//!   spreaders (three charges each). Rivals converted at t100: 0.
+//! - t8-20261127T094009Z at t110: 27 spreaders, 14 known rival cities owed.
+//!   Eleven charted, nearly all through the scouts' surplus clause, beside
+//!   two seekers and the last-charge scouts, and the corps spread 14 times
+//!   in t100-t124.
+//! - Over five of the quoted games, at least one last-charge Missionary was
+//!   already scouting on 401 of the 443 turns a seeker was out (969 seeker
+//!   unit-turns).
+//!
+//! Version two keeps version one and makes the searches share one budget,
+//! one in [`SCOUT_SHARE`] of the whole corps (at least one):
+//! - The seekers' quota is what the budget leaves after the last-charge
+//!   scouts already walking toward a goal
+//!   ([`AdvancedAi::seekers_left_by_the_scouts`]), and the seekers are the
+//!   spreaders with the fewest charges (a seeker keeps its charges, so the
+//!   full spreaders keep the known work).
+//! - The scouts' quota counts each searcher once
+//!   ([`AdvancedAi::scouts_after_the_searchers`]): the surplus clause, like
+//!   the under-charted share, is less this turn's seekers, and the seekers
+//!   leave the list the scouts are picked from (version one subtracted them
+//!   from the share only, and a seeker at the head of that list spent a
+//!   slot again). A last-charge unit keeps its slot at the head as before.
+//!
+//! A spreader with nothing it knows left to convert still charts as before.
 //! Off, nothing changes.
 
+use super::religion_seat_charts_the_rivals::SCOUT_SHARE;
 use super::*;
 
 impl AdvancedAi {
@@ -51,7 +87,7 @@ impl AdvancedAi {
         religion: &str,
         sites: &[Pos],
     ) -> bool {
-        if !self.spreaders_spread_before_they_chart || sites.is_empty() {
+        if !self.spreads_before_it_charts() || sites.is_empty() {
             return false;
         }
         let Some(unit) = g.units.get(&uid) else {
@@ -89,10 +125,102 @@ impl AdvancedAi {
         religion: &str,
         offensive: bool,
     ) -> usize {
-        if !self.spreaders_spread_before_they_chart {
+        if !self.spreads_before_it_charts() {
             return 0;
         }
         self.unseen_rival_seekers(g, pid, religion, offensive).len()
+    }
+
+    /// Either version of the family is on: version two carries version one.
+    fn spreads_before_it_charts(&self) -> bool {
+        self.spreaders_spread_before_they_chart || self.spreaders_spread_before_they_chart_2
+    }
+
+    /// `spreaders-spread-before-they-chart-2` is on: the corps' searchers
+    /// share one budget.
+    pub(super) fn searchers_share_one_budget(&self) -> bool {
+        self.spreaders_spread_before_they_chart_2
+    }
+
+    /// The Missionaries of `pid` that `last-charge-joins-the-army` keeps on
+    /// their last charge and that are walking toward a fog goal: the corps'
+    /// searchers that no quota names. Zero with version two off.
+    pub(super) fn last_charge_scouts_out(&self, g: &Game, pid: usize) -> usize {
+        if !self.searchers_share_one_budget() {
+            return 0;
+        }
+        let memory = self.missionary_explore.borrow();
+        g.units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && unit.kind == "missionary"
+                    && memory
+                        .get(&unit.id)
+                        .is_some_and(|entry| entry.goal.is_some())
+                    && self.keeps_its_last_charge(g, pid, unit.id)
+            })
+            .count()
+    }
+
+    /// The corps' one search budget: one in [`SCOUT_SHARE`] of `corps`
+    /// spreaders, at least one.
+    fn search_budget(corps: usize) -> usize {
+        (corps / SCOUT_SHARE).max(1)
+    }
+
+    /// How many seekers the budget leaves, given `seekable` spreaders that
+    /// may seek: the budget over them and the last-charge scouts out, less
+    /// those scouts. `None` with version two off, which leaves the seekers'
+    /// own quota.
+    pub(super) fn seekers_left_by_the_scouts(
+        &self,
+        g: &Game,
+        pid: usize,
+        seekable: usize,
+    ) -> Option<usize> {
+        if !self.searchers_share_one_budget() {
+            return None;
+        }
+        let scouts = self.last_charge_scouts_out(g, pid);
+        Some(Self::search_budget(seekable + scouts).saturating_sub(scouts))
+    }
+
+    /// The corps' charting scouts this turn under version two: the
+    /// under-charted share and the `surplus` clause of
+    /// `religion-seat-charts-the-rivals`, each less this turn's seekers,
+    /// taken from `corps` (sorted fewest charges first) without those
+    /// seekers. A unit on its last charge keeps its place at the head of
+    /// `corps` as in version one, so a last-charge scout already out spends
+    /// a slot there; each searcher is counted once. `None` with version two
+    /// off.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn scouts_after_the_searchers(
+        &self,
+        g: &Game,
+        pid: usize,
+        religion: &str,
+        offensive: bool,
+        corps: &[(i32, u32)],
+        under_charted: usize,
+        surplus: usize,
+    ) -> Option<Vec<u32>> {
+        if !self.searchers_share_one_budget() {
+            return None;
+        }
+        let seekers = self.unseen_rival_seekers(g, pid, religion, offensive);
+        let quota = under_charted
+            .min(corps.len() / SCOUT_SHARE)
+            .saturating_sub(seekers.len())
+            .max(surplus.saturating_sub(seekers.len()));
+        Some(
+            corps
+                .iter()
+                .map(|(_, id)| *id)
+                .filter(|id| !seekers.contains(id))
+                .take(quota)
+                .collect(),
+        )
     }
 }
 
