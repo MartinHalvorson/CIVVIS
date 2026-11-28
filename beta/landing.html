@@ -395,55 +395,86 @@
   .home-bench-more a:hover { text-decoration: underline; }
 
   /* Over the benchmark, ELO Rankings (operator, 2026-11-27: "put the elo
-     chart at the top of home/ too, above the benchmarks. expand the format
-     to: Player. Scale of Cheating. ELO (Diplo Off). ELO (Diplo On)", the
-     levels under it from Prince, 0, to Deity, 4, and then "Mods"): every
-     player on one Elo scale, how far the game helps each, and its Elo with
-     the Diplomatic victory off and on. A row is faintly its kind's colour,
-     the CIVVIS AI gold, the classic Firaxis AI red and a person blue, the
-     inks Tournaments' ELO Rankings gives the three (operator, the same day,
-     of that table: "we can highlight dev blue, civvis gold, and firaxis red
-     in the elo table. faint. help show the categories all being compared
-     together"). The record is ELO Rankings' own, written into this page's
-     `elo-data` slot when the site is published. The table is its own
-     container: it is drawn by the room it is given, not the window's. */
+     chart at the top of home/ too, above the benchmarks"): the one table,
+     the same as Tournaments' and ELO Rankings' (`.elo-table`, below). */
   .home-elo { margin: 0 0 26px; }
-  .elo-kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 8px; color: var(--muted); font-size: 11.5px; }
-  .elo-kind::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
-  .elo-kind.is-agent::before { background: color-mix(in srgb, var(--gold) 45%, transparent); }
-  .elo-kind.is-level::before { background: color-mix(in srgb, #e5534b 50%, transparent); }
-  .elo-kind.is-person::before { background: color-mix(in srgb, var(--accent) 50%, transparent); }
-  .elo-rank { container: elo-rank / inline-size; min-width: 0; }
-  .elo-rank .rank-list { margin: 0; padding: 0; list-style: none; }
-  .elo-rank .rank-row {
-    display: grid; grid-template-columns: 18px minmax(0, 2fr) minmax(4.6em, 1fr) minmax(8.4em, 1fr) minmax(8.4em, 1fr); gap: 8px; align-items: baseline;
-    padding: 4px 8px; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4;
+  /* elo-table: begin
+     ELO Rankings, one table (operator 2026-11-28: "merge the home elo
+     ranking and the elo chart together into the same elo ranking table and
+     replace both copies with this new merged results. fill out as
+     completely as possible"). The same block stands on Home, Tournaments
+     and ELO Rankings, byte for byte: these rules, the markup under the
+     section's title and the script that fills it (`beta/elo_table_test.py`
+     holds the copies to one another). It is Tournaments' two tables, a row
+     for each player running across both (2026-11-27: "one on the left for
+     computer control firaxis civ 6 games and one on the right for CIVVIS
+     self-play ... any col in either table should sort all rows in both
+     tables"), with Home's Scale of Cheating, its levels kept from Prince 0
+     to Deity 4 and its row for the mods, and each kind faintly its colour,
+     the CIVVIS AI gold, the classic Firaxis AI red and a person blue ("we
+     can highlight dev blue, civvis gold, and firaxis red in the elo table.
+     faint"). Every row and head row is one fixed height, so the two tables
+     line up. */
+  .elo-table { min-width: 0; container: elo-table / inline-size; }
+  .elo-table[hidden] { display: none; }
+  .elo-table .elo-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .elo-table .elo-kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; color: var(--muted); font-size: 11.5px; }
+  .elo-table .elo-kind::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
+  .elo-table .elo-kind.is-agent::before { background: color-mix(in srgb, var(--gold) 45%, transparent); }
+  .elo-table .elo-kind.is-level::before { background: color-mix(in srgb, #e5534b 50%, transparent); }
+  .elo-table .elo-kind.is-person::before { background: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .elo-table .elo-pair { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 0 14px; align-items: start; }
+  .elo-table .elo-scroll { min-width: 0; overflow-x: auto; }
+  .elo-table table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+  .elo-table th, .elo-table td { box-sizing: border-box; padding: 0 6px; overflow: hidden; text-align: right; white-space: nowrap; }
+  .elo-table thead tr { height: 24px; }
+  .elo-table thead th { height: 24px; line-height: 23px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .elo-table thead th.elo-side-head { color: var(--text); font-size: 11.5px; letter-spacing: .06em; text-align: left; border-bottom: 1px solid var(--border); }
+  .elo-table thead th.is-group { color: var(--text); text-align: center; border-bottom: 1px solid var(--border); }
+  .elo-table thead th.is-cheat, .elo-table thead th.is-ident { vertical-align: bottom; padding-bottom: 4px; line-height: 1.15; }
+  .elo-table thead th.is-cheat { width: 5.4em; min-width: 5.4em; white-space: normal; }
+  .elo-table th.is-ident, .elo-table td.is-ident { text-align: left; }
+  .elo-table tbody tr { height: 28px; }
+  .elo-table tbody td { height: 28px; line-height: 27px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  .elo-table tbody tr.is-agent { background: color-mix(in srgb, var(--gold) 8%, transparent); }
+  .elo-table tbody tr.is-level { background: color-mix(in srgb, #e5534b 10%, transparent); }
+  .elo-table tbody tr.is-person { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+  .elo-table tbody tr.is-mods td { color: var(--faint); font-weight: 400; }
+  .elo-table tbody tr.is-hover td { box-shadow: inset 0 0 0 999px color-mix(in srgb, #fff 7%, transparent); }
+  .elo-table td small { line-height: 1; }
+  .elo-table td.is-n { width: 1%; color: var(--faint); font-size: 11.5px; }
+  .elo-table td.is-ident { max-width: 18em; color: var(--text); font-weight: 600; text-overflow: ellipsis; }
+  .elo-table td.is-ident small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .elo-table td.is-cheat { color: var(--text); }
+  .elo-table td.is-value { color: #fff; font-weight: 700; }
+  .elo-table td.is-value small { margin-left: 3px; color: var(--faint); font-size: 10.5px; font-weight: 400; }
+  .elo-table td.is-stand { color: var(--muted); font-weight: 600; }
+  .elo-table td.is-none { color: var(--faint); font-weight: 400; }
+  .elo-table td.is-sorted { box-shadow: inset 0 0 0 999px color-mix(in srgb, #fff 3%, transparent); }
+  .elo-table td.is-split, .elo-table th.is-split { border-left: 1px solid var(--border); }
+  .elo-table .rank-sort {
+    padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit;
+    text-transform: inherit; cursor: pointer;
   }
-  .elo-rank .rank-row.is-agent { background: color-mix(in srgb, var(--gold) 8%, transparent); }
-  .elo-rank .rank-row.is-level { background: color-mix(in srgb, #e5534b 10%, transparent); }
-  .elo-rank .rank-row.is-person { background: color-mix(in srgb, var(--accent) 11%, transparent); }
-  .elo-rank .rank-row.is-mods .rank-name { color: var(--faint); }
-  .elo-rank .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
-  .elo-rank .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-  .elo-rank .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
-  .elo-rank .rank-cheat { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
-  .elo-rank .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; white-space: nowrap; }
-  .elo-rank .rank-value small { margin-left: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
-  .elo-rank .rank-value.is-none, .elo-rank .rank-cheat.is-none { color: var(--faint); font-weight: 400; }
-  .elo-rank .rank-head { padding-top: 0; padding-bottom: 3px; border-top: 0; align-items: end; }
-  .elo-rank .rank-col, .elo-rank .rank-sort { color: var(--faint); font: 500 11.5px/1.3 var(--sans); text-align: right; }
-  .elo-rank .rank-col.is-player { text-align: left; }
-  .elo-rank .rank-sort { padding: 2px 0; border: 0; background: none; cursor: pointer; }
-  .elo-rank .rank-sort:hover { color: var(--text); }
-  .elo-rank .rank-sort[aria-pressed="true"] { color: #fff; font-weight: 700; }
-  .elo-rank .rank-sort[aria-pressed="true"]::after { content: " \25BE"; }
-  .elo-rank .rank-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  @container elo-rank (max-width: 479px) {
-    .elo-rank .rank-row { grid-template-columns: 14px minmax(0, 1fr) 4em 4.8em 4.8em; gap: 5px; padding-left: 4px; padding-right: 4px; }
-    .elo-rank .rank-name small, .elo-rank .rank-value small { display: block; margin-left: 0; }
-    .elo-rank .rank-name small { overflow: hidden; text-overflow: ellipsis; }
-    .elo-rank .rank-wide { display: none; }
+  .elo-table .rank-sort:hover { color: var(--text); }
+  .elo-table .rank-sort[aria-pressed="true"] { color: #fff; font-weight: 700; }
+  .elo-table .rank-sort[aria-pressed="true"]::after { content: " \25BE"; }
+  .elo-table .rank-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .elo-table .elo-fine { margin-top: 8px; }
+  .elo-table .elo-fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .elo-table .elo-fine > summary:hover, .elo-table .elo-fine[open] > summary { color: var(--accent); }
+  .elo-table .elo-note { max-width: 860px; margin: 6px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .elo-table .elo-note a { color: var(--accent); }
+  /* A table without the room for both at their width keeps the players'
+     names and drops what each plays (its row's title still says), so the
+     self-play columns keep their room. */
+  @container elo-table (max-width: 899px) {
+    .elo-table td.is-ident small { display: none; }
   }
+  @container elo-table (max-width: 599px) {
+    .elo-table .elo-pair { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 0 8px; }
+  }
+  /* elo-table: end */
 
   /* Under it the page is six videos, two by two by two (operator,
      2026-11-22, four of them; 2026-11-24, six): the fastest game upper
@@ -598,44 +629,45 @@
     </p>
 
     <!-- ELO Rankings, the page's first part (operator, 2026-11-27: "put
-         the elo chart at the top of home/ too, above the benchmarks. expand
-         the format to: Player. Scale of Cheating. ELO (Diplo Off). ELO
-         (Diplo On)", under it "Prince 0, King 1, Emperor 2, Immortal 3,
-         Deity 4", then "Mods", "combining this with what you have there").
-         The players are the ones ELO Rankings rates, read from its record:
-         the CIVVIS AI strategies, Civilization VI's own AI at Lv 4 to Lv 8
-         and the people who play the agents, every rated player numbered in
-         one ranking. A row is the player, its place on the scale of
-         cheating (the steps of its bonuses Civilization VI hands its own AI
-         at a level, none at Prince and four at Deity; an agent and a person
-         are handed none) and its Elo with the Diplomatic victory off and
-         with every victory on. A level keeps its row when it has no figure,
-         and under the players a row is kept for the mods of the game's AI,
-         none rated yet. The record is ELO Rankings' own
-         (`beta/elo_page.py`), written into the page's `elo-data` slot when
-         the site is published; the section stays hidden on a page that was
-         not given one. How it is counted, and the ratings over time, are on
-         ELO Rankings, where the head's link goes. -->
+         the elo chart at the top of home/ too, above the benchmarks"), and
+         since 2026-11-28 the one table Tournaments and ELO Rankings show
+         ("merge the home elo ranking and the elo chart together into the
+         same elo ranking table and replace both copies with this new
+         merged results. fill out as completely as possible"): its head is
+         this page's, the title and at the right the page with the ratings
+         over time; under it the block every copy shares. The section stays
+         hidden on a page that was not given a record. -->
     <section class="res-block home-elo" id="elo" aria-labelledby="home-elo-title" hidden>
       <header class="res-side-head">
         <div class="res-side-name">
           <h2 class="res-side-title" id="home-elo-title">ELO Rankings</h2>
-          <p class="res-counted">CIVVIS AI strategies, the classic Firaxis AI and people on one Elo scale. Scale of Cheating: the bonuses Civilization VI hands its own AI, 0 at Prince to 4 at Deity.</p>
         </div>
         <p class="home-bench-more"><a href="../charts/elo-rankings/">Elo over time</a></p>
       </header>
       <div class="res-section">
-        <p class="elo-kinds"><span class="elo-kind is-agent">CIVVIS AI</span><span class="elo-kind is-level">Classic Firaxis AI</span><span class="elo-kind is-person">Dev</span></p>
-        <div class="elo-rank">
-          <div class="rank-row rank-head">
-            <span></span>
-            <span class="rank-col is-player">Player</span>
-            <span class="rank-col" title="The bonuses Civilization VI hands its own AI, in its steps over Prince: 0 at Prince, 4 at Deity. The CIVVIS AI and people play with none."><span class="rank-wide">Scale of </span>Cheating</span>
-            <button type="button" class="rank-sort" data-sort="off" aria-pressed="true" title="Elo with the Diplomatic victory switched off. Sort by this column"><span class="rank-wide">ELO (</span>Diplo Off<span class="rank-wide">)</span></button>
-            <button type="button" class="rank-sort" data-sort="on" aria-pressed="false" title="Elo with every victory on. Sort by this column"><span class="rank-wide">ELO (</span>Diplo On<span class="rank-wide">)</span></button>
+        <!-- elo-table: begin
+             ELO Rankings, the same on Home, Tournaments and ELO Rankings:
+             the rules in this page's style and the script after the
+             `elo-data` slot are this block's, and `beta/elo_table_test.py`
+             holds the three copies to one another. Its script draws both
+             tables from the slot; until the slot is filled it stays hidden. -->
+        <div class="elo-table" hidden>
+          <p class="elo-sub">CIVVIS AI strategies, the classic Firaxis AI and people on one Elo scale. Left: Civilization VI under computer control. Right: CIVVIS self-play. Any column sorts both. Scale of Cheating: the bonuses Civilization VI hands its own AI, 0 at Prince to 4 at Deity.</p>
+          <p class="elo-kinds"><span class="elo-kind is-agent">CIVVIS AI</span><span class="elo-kind is-level">Classic Firaxis AI</span><span class="elo-kind is-person">Dev</span></p>
+          <div class="elo-pair">
+            <div class="elo-scroll" data-elo-side="control">
+              <table aria-label="ELO measured in Civilization VI under computer control"><thead></thead><tbody></tbody></table>
+            </div>
+            <div class="elo-scroll" data-elo-side="self">
+              <table aria-label="ELO measured in CIVVIS self-play"><thead></thead><tbody></tbody></table>
+            </div>
           </div>
-          <ol class="rank-list"></ol>
+          <details class="elo-fine">
+            <summary>How it is counted</summary>
+            <p class="elo-note"><span data-elo-note></span> <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a></p>
+          </details>
         </div>
+        <!-- elo-table: end -->
       </div>
     </section>
 
@@ -927,126 +959,289 @@
        ELO Rankings page's own record (`beta/elo_page.py`), the same fits. -->
   <script type="application/json" id="elo-data">null</script>
   <script>
-  // ELO Rankings, over the benchmark (`#elo`): the CIVVIS AI strategies,
-  // Civilization VI's own AI at Lv 4 to Lv 8 and the people who play the
-  // agents in Civilization VI itself, in one ranking. A row is a player, how
-  // far the game helps it (the scale of cheating), and its Elo in each
-  // reading of the games: with the Diplomatic victory switched off, then
-  // with every victory on. An Elo column's head sorts the list by it; it
-  // opens on Diplo off. Under the players a row is kept for the mods of the
-  // game's AI, none of them rated yet. The slot is ELO Rankings' own record
-  // (`beta/elo_page.py`): the stock reading at its top level and the
-  // diplo-off one under `off`. Every figure arrives through textContent.
+  // elo-table: begin
+  // ELO Rankings (`.elo-table`), the same on Home, Tournaments and ELO
+  // Rankings (operator 2026-11-28: "merge the home elo ranking and the elo
+  // chart together into the same elo ranking table and replace both copies
+  // with this new merged results. fill out as completely as possible").
+  //
+  // Every player on one scale: the CIVVIS AI strategies, Civilization VI's
+  // own AI at Lv 4 to Lv 8 (a row each, always, with its place on the scale
+  // of cheating, Prince 0 to Deity 4), the people who play the agents in
+  // Civilization VI itself, and under them a row kept for the mods of the
+  // game's AI, none rated yet. Two tables, a row a player across both: on
+  // the left what Civilization VI itself measured under computer control,
+  // the levels from the benchmark and people from their hot seat games; on
+  // the right CIVVIS self-play, a column a setup, each a fit of its own
+  // (`strategy_elo --setup`, the record's `setups`), and the four-player
+  // Pangaea fits the ratings began with (the record itself and `off`). A
+  // level's figure in self-play is the simulator's stand-in for it, our
+  // agent with the level's handicap, rated at those tables. A setup not yet
+  // rated is a column of dashes until its fit is published. Any column sorts
+  // both tables; the page opens on Diplo off, every player by the figure
+  // that measures it, an agent's in self-play and a level's or a person's
+  // in Civilization VI. The record is ELO Rankings' own (`beta/elo_page.py`),
+  // written into the page's `elo-data` slot when the site is published.
+  // Every figure arrives through textContent.
   (() => {
     let data = null;
     try { data = JSON.parse(document.getElementById("elo-data").textContent); } catch (_) { return; }
-    const card = document.getElementById("elo");
-    if (!card || !data || typeof data !== "object") return;
+    const table = document.querySelector(".elo-table");
+    if (!table || !data || typeof data !== "object") return;
     const el = (tag, cls, text) => {
       const node = document.createElement(tag);
       if (cls) node.className = cls;
       if (text != null) node.textContent = text;
       return node;
     };
+    const count = (n) => Number(n).toLocaleString("en-US");
+    const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
     // An entrant that never lost is rated "at least", one that never won "at most".
     const elo = (r) => (r.bound === "upper" ? "≤" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
     const pm = (m) => (m ? "±" + Math.round(m) : "");
-    const VIEWS = { off: data.off || null, on: data };
-    const SIDES = ["off", "on"];
-    const SIDE_NAME = { on: "Diplo on", off: "Diplo off" };
     const reading = (r) => ({ elo: r.elo, margin: r.margin, bound: r.bound, games: r.games, wins: r.wins });
-    const entries = new Map();
-    const entry = (key, base) => {
-      if (!entries.has(key)) entries.set(key, { ...base, on: null, off: null });
-      return entries.get(key);
-    };
-    // The scale of cheating. Civilization VI hands its own AI its bonuses
-    // by level, in steps over Prince, where it hands it none: a level's
-    // place on the scale is the count of those steps, Prince 0 to Deity 4
-    // (`beta/home_elo_test.py` holds the levels and the count to the
+    const setups = data.setups && typeof data.setups === "object" ? data.setups : {};
+    // The columns, [setup, head, game], in the operator's order (2026-11-27:
+    // "6p Continents Online (Diplo off, Diplo on, science, culture,
+    // religion, diplomacy, domination, score) , 2P Pangaea (religion off,
+    // religion on)"), with Home's two, the four-player fits, between them.
+    const SIX = "6P Continents Online", FOUR = "4P Pangaea", TWO = "2P Pangaea";
+    const SELF = [
+      ["continents6_no_diplo", "Diplo off", SIX], ["continents6", "Diplo on", SIX],
+      ["continents6_science", "Science", SIX], ["continents6_culture", "Culture", SIX], ["continents6_religion", "Religion", SIX],
+      ["continents6_diplomacy", "Diplomacy", SIX], ["continents6_domination", "Domination", SIX], ["continents6_score", "Score", SIX],
+      ["pangaea4_no_diplo", "Diplo off", FOUR], ["pangaea4", "Diplo on", FOUR],
+      ["pangaea2_no_religion", "Religion off", TWO], ["pangaea2", "Religion on", TWO],
+    ];
+    const CONTROL = [["continents6_no_diplo", "Diplo off", SIX], ["continents6", "Diplo on", SIX]];
+    const FOUR_PLAYER = { pangaea4: data, pangaea4_no_diplo: data.off || null };
+    // The benchmark is 6P Continents Online, so its levels and the people's
+    // games are read against the six-player fits; until one is published,
+    // against the four-player fit of the same Diplomatic victory.
+    const STANDS = { continents6_no_diplo: "pangaea4_no_diplo", continents6: "pangaea4" };
+    const selfView = (key) => (key in FOUR_PLAYER ? FOUR_PLAYER[key] : setups[key] || null);
+    const controlView = (key) => setups[key] || FOUR_PLAYER[STANDS[key]] || null;
+    const controlStandsIn = (key) => !setups[key] && !!FOUR_PLAYER[STANDS[key]];
+    const rowsOf = (view) => (view && view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : []);
+    // The scale of cheating. Civilization VI hands its own AI its bonuses by
+    // level, in steps over Prince, where it hands it none: a level's place on
+    // the scale is the count of those steps, Prince 0 to Deity 4
+    // (`beta/elo_table_test.py` holds the levels and the count to the
     // engine's own ladder, `data/difficulties.json`). An agent and a person
-    // are handed nothing, and stand at 0. Every level rated has its row,
-    // with or without a figure.
+    // are handed nothing, and stand at 0.
     const LEVELS = [[8, "Deity"], [7, "Immortal"], [6, "Emperor"], [5, "King"], [4, "Prince"]];
     const FAIR = 4;
+    const entries = new Map();
+    const entry = (key, base) => {
+      if (!entries.has(key)) entries.set(key, { ...base, at: { control: {}, self: {} } });
+      return entries.get(key);
+    };
     const level = (n, name) => entry("level:" + n, { kind: "level", level: n, name: "Lv " + n + " " + name, tilt: "Classic Firaxis AI", cheating: n - FAIR });
     for (const [n, name] of LEVELS) level(n, name);
-    for (const side of SIDES) {
-      const view = VIEWS[side];
+    for (const [key] of SELF) {
+      const view = selfView(key);
       if (!view) continue;
-      const rows = view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : [];
-      for (const r of rows) {
-        if (r.kind === "agent") entry("agent:" + r.id, { kind: "agent", name: r.name, tilt: r.tilt, cheating: 0 })[side] = reading(r);
+      for (const r of rowsOf(view)) {
+        if (r.kind === "agent") entry("agent:" + r.id, { kind: "agent", name: r.name, tilt: r.tilt, cheating: 0 }).at.self[key] = reading(r);
       }
-      const levels = view.firaxis && Array.isArray(view.firaxis.levels) ? view.firaxis.levels : [];
-      for (const l of levels) {
-        if (l.now) level(l.level, l.name)[side] = reading(l.now);
-      }
-      for (const p of Array.isArray(view.people) ? view.people : []) {
-        entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person", cheating: 0 })[side] = reading(p);
+      for (const s of Array.isArray(view.simulator) ? view.simulator : []) {
+        if (entries.has("level:" + s.level)) entries.get("level:" + s.level).at.self[key] = { elo: s.elo, margin: s.margin, bound: "", stand: s.name };
       }
     }
-    const list = card.querySelector(".elo-rank");
-    const ol = list.querySelector(".rank-list");
-    const none = "–";
-    const value = (r, side) => {
-      const x = r[side];
-      if (!x) return el("span", "rank-value is-none", none);
-      const figure = el("span", "rank-value", elo(x));
-      if (x.margin) figure.append(el("small", "", pm(x.margin)));
-      return figure;
-    };
-    const cheat = (r) => (r.cheating == null ? el("span", "rank-cheat is-none", none) : el("span", "rank-cheat", String(r.cheating)));
-    const helped = (r) => "Scale of cheating " + r.cheating + ": " + (r.kind !== "level" ? "plays with no bonus"
-      : !r.cheating ? "Civilization VI hands its own AI no bonus at this level"
-      : r.cheating + (r.cheating === 1 ? " step" : " steps") + " of the bonuses Civilization VI hands its own AI");
-    const said = (r, side) => {
-      const x = r[side];
-      if (!x) return "";
-      const interval = x.margin ? "; 95% interval " + Math.round(x.elo - x.margin) + "–" + Math.round(x.elo + x.margin) : "";
-      return SIDE_NAME[side] + ": " + (r.kind === "level"
-        ? "our seat won " + x.wins + " of " + x.games + " benchmark games against five of it"
-        : r.kind === "person"
-        ? "won " + x.wins + " of " + x.games + (x.games === 1 ? " game" : " games") + " against the Civ AI Agents in Civilization VI"
-        : "won " + x.wins + " of " + x.games + " rated tables") + interval;
-    };
-    // Strongest first in the column sorted by; a row with no figure there
-    // follows every row that has one, in the other column's order, and a
-    // level with no figure in either follows those, the highest level
-    // first. At a tie an agent stands above a level, and a level above a
-    // person.
-    const rank = { agent: 0, level: 1, person: 2 };
-    const order = (side) => {
-      const other = side === "on" ? "off" : "on";
-      const at = (r) => r[side] || r[other];
-      return [...entries.values()].sort((a, b) =>
-        (!a[side] - !b[side]) || (!at(a) - !at(b))
-        || (at(a) ? at(b).elo - at(a).elo : b.level - a.level)
-        || (rank[a.kind] - rank[b.kind]) || a.name.localeCompare(b.name));
-    };
+    for (const [key] of CONTROL) {
+      const view = controlView(key);
+      if (!view) continue;
+      const levels = view.firaxis && Array.isArray(view.firaxis.levels) ? view.firaxis.levels : [];
+      for (const l of levels) {
+        if (l.now) level(l.level, l.name).at.control[key] = reading(l.now);
+      }
+      for (const p of Array.isArray(view.people) ? view.people : []) {
+        entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person", cheating: 0 }).at.control[key] = reading(p);
+      }
+    }
+    const rated = (r) => Object.keys(r.at.control).length + Object.keys(r.at.self).length > 0;
+    if (![...entries.values()].some(rated)) return;
     // The mods of Civilization VI's AI (operator 2026-11-27, last in the
     // format: "Mods"): none is rated yet, and the row holds their place.
-    const MODS = { kind: "mods", name: "Mods", tilt: "None rated yet", cheating: null, on: null, off: null };
-    const show = (side) => {
-      let place = 0;
-      ol.textContent = "";
-      for (const r of [...order(side), MODS]) {
-        const item = el("li", "rank-row is-" + r.kind);
-        item.title = r.kind === "mods" ? "Mods of Civilization VI\u2019s AI: none is rated yet"
-          : [r.name, helped(r), said(r, "off"), said(r, "on")].filter(Boolean).join("\n");
-        // Every rated player numbered in one ranking.
-        item.append(el("span", "rank-n", r.off || r.on ? String(++place) : ""));
-        const label = el("span", "rank-name", r.name);
-        if (r.tilt) label.append(el("small", "", r.tilt));
-        item.append(label, cheat(r), value(r, "off"), value(r, "on"));
-        ol.append(item);
-      }
-      for (const button of list.querySelectorAll(".rank-sort")) button.setAttribute("aria-pressed", String(button.dataset.sort === side));
+    const MODS = { kind: "mods", name: "Mods", tilt: "None rated yet", cheating: null, at: { control: {}, self: {} } };
+    const bodies = {}, heads = {};
+    for (const side of ["control", "self"]) {
+      const pane = table.querySelector('[data-elo-side="' + side + '"]');
+      bodies[side] = pane.querySelector("tbody");
+      heads[side] = pane.querySelector("thead");
+    }
+    const split = (columns, at) => at === 0 || columns[at][2] !== columns[at - 1][2];
+    const sideName = { control: "Civilization VI", self: "CIVVIS self-play" };
+    const helped = (r) => r.kind === "mods" ? "" : "Scale of cheating " + r.cheating + ": " + (r.kind !== "level" ? "plays with no bonus"
+      : !r.cheating ? "Civilization VI hands its own AI no bonus at this level"
+      : r.cheating + (r.cheating === 1 ? " step" : " steps") + " of the bonuses Civilization VI hands its own AI");
+    const said = (r, side, column) => {
+      const x = r.at[side][column[0]];
+      if (!x) return "";
+      const interval = x.margin ? "; 95% interval " + Math.round(x.elo - x.margin) + "–" + Math.round(x.elo + x.margin) : "";
+      const what = x.stand
+        ? "the simulator’s stand-in for it, our agent with the level’s handicap (" + x.stand + "), rated at these tables"
+        : r.kind === "level"
+        ? "our seat won " + x.wins + " of " + x.games + " benchmark games against five of it" + (controlStandsIn(column[0]) ? " (read against the four-player fit)" : "")
+        : r.kind === "person"
+        ? "won " + x.wins + " of " + x.games + (x.games === 1 ? " game" : " games") + " against the Civ AI Agents in Civilization VI"
+        : "won " + x.wins + " of " + x.games + " rated tables";
+      return sideName[side] + ", " + column[2] + ", " + column[1] + ": " + what + interval;
     };
-    for (const button of list.querySelectorAll(".rank-sort")) button.addEventListener("click", () => show(button.dataset.sort));
-    show(VIEWS.off ? "off" : "on");
-    card.hidden = false;
+    // A sort is a side and a setup ("self:continents6_science"), or both
+    // sides' Diplo off together (OPEN), the ranking the page opens on.
+    // Strongest first; a row with no figure in the column sorted by follows
+    // every row that has one, in that Diplo off ranking; then the levels with
+    // no figure anywhere, the highest first. At a tie an agent stands above
+    // a level, and a level above a person.
+    const rank = { agent: 0, level: 1, person: 2 };
+    const OPEN = "both:" + SELF[0][0];
+    const figure = (r, sort) => {
+      const [side, key] = sort.split(":");
+      const of = (where) => (r.at[where][key] ? r.at[where][key].elo : null);
+      if (side !== "both") return of(side);
+      return r.kind === "agent" ? of("self") ?? of("control") : of("control") ?? of("self");
+    };
+    const order = (sort) => [...entries.values()].sort((a, b) =>
+      ((figure(a, sort) === null) - (figure(b, sort) === null))
+      || ((figure(b, sort) ?? figure(b, OPEN) ?? -Infinity) - (figure(a, sort) ?? figure(a, OPEN) ?? -Infinity) || 0)
+      || (rated(b) - rated(a))
+      || (a.kind === "level" && b.kind === "level" ? b.level - a.level : 0)
+      || (rank[a.kind] - rank[b.kind]) || a.name.localeCompare(b.name));
+    // The page opens with both tables' Diplo off marked: the one ranking by it.
+    const sorted = (side, key, sort) => sort === side + ":" + key || (sort === OPEN && key === SELF[0][0]);
+    // The heads: a line naming the table, the game each column was played
+    // at, and the columns, each a button that sorts both tables by it.
+    const columnsOf = { control: CONTROL, self: SELF };
+    const titleOf = (side, column) => column[2] + ", " + column[1] + ": " + (side === "control"
+      ? "measured in Civilization VI under computer control (the benchmark) and in hot seat games"
+      : column[0].startsWith("pangaea4") ? "CIVVIS self-play at the four-player tables the ratings began with"
+      : "CIVVIS self-play" + (/_(science|culture|religion|diplomacy|domination|score)$/.test(column[0]) ? ", that victory alone" : ""))
+      + ". Sort both tables by this column";
+    for (const side of ["control", "self"]) {
+      const columns = columnsOf[side], lead = side === "control";
+      const top = el("tr"), groups = el("tr"), names = el("tr");
+      const name = el("th", "elo-side-head", side === "control" ? "Civilization VI · computer control" : "CIVVIS self-play");
+      name.scope = "colgroup";
+      name.colSpan = columns.length + (lead ? 3 : 0);
+      top.append(name);
+      if (lead) {
+        for (const [cls, text, title] of [["", "", ""], ["is-ident", "Player", ""],
+          ["is-cheat", "Scale of Cheating", "The bonuses Civilization VI hands its own AI, in its steps over Prince: 0 at Prince, 4 at Deity. The CIVVIS AI and people play with none."]]) {
+          const cell = el("th", cls, text);
+          cell.scope = "col";
+          cell.rowSpan = 2;
+          if (title) cell.title = title;
+          groups.append(cell);
+        }
+      }
+      for (let at = 0; at < columns.length;) {
+        let end = at;
+        while (end < columns.length && columns[end][2] === columns[at][2]) end++;
+        const group = el("th", "is-group is-split", columns[at][2]);
+        group.scope = "colgroup";
+        group.colSpan = end - at;
+        groups.append(group);
+        at = end;
+      }
+      columns.forEach((column, at) => {
+        const cell = el("th", split(columns, at) ? "is-split" : "");
+        cell.scope = "col";
+        const button = el("button", "rank-sort", column[1]);
+        button.type = "button";
+        button.dataset.sort = side + ":" + column[0];
+        button.title = titleOf(side, column);
+        cell.append(button);
+        names.append(cell);
+      });
+      heads[side].append(top, groups, names);
+    }
+    const cells = (row, r, side, sort) => {
+      columnsOf[side].forEach((column, at) => {
+        const x = r.at[side][column[0]];
+        const cell = el("td", (x ? (x.stand ? "is-value is-stand" : "is-value") : "is-none") + (split(columnsOf[side], at) ? " is-split" : "")
+          + (sorted(side, column[0], sort) ? " is-sorted" : ""), x ? elo(x) : "–");
+        if (x && x.margin) cell.append(el("small", "", pm(x.margin)));
+        if (x) cell.title = said(r, side, column);
+        row.append(cell);
+      });
+    };
+    const show = (sort) => {
+      let place = 0;
+      bodies.control.textContent = "";
+      bodies.self.textContent = "";
+      [...order(sort), MODS].forEach((r, index) => {
+        const left = el("tr", "is-" + r.kind), right = el("tr", "is-" + r.kind);
+        left.title = right.title = r.kind === "mods" ? "Mods of Civilization VI’s AI: none is rated yet"
+          : [r.name, helped(r), ...CONTROL.map((column) => said(r, "control", column)), ...SELF.map((column) => said(r, "self", column))].filter(Boolean).join("\n");
+        left.dataset.eloRow = right.dataset.eloRow = String(index);
+        // Every rated player numbered in one ranking.
+        left.append(el("td", "is-n", r.kind !== "mods" && rated(r) ? String(++place) : ""));
+        const name = el("td", "is-ident", r.name);
+        if (r.tilt) name.append(el("small", "", r.tilt));
+        left.append(name, el("td", "is-cheat" + (r.cheating == null ? " is-none" : ""), r.cheating == null ? "–" : String(r.cheating)));
+        cells(left, r, "control", sort);
+        cells(right, r, "self", sort);
+        bodies.control.append(left);
+        bodies.self.append(right);
+      });
+      for (const button of table.querySelectorAll(".rank-sort")) {
+        const [side, key] = button.dataset.sort.split(":");
+        button.setAttribute("aria-pressed", String(sorted(side, key, sort)));
+      }
+    };
+    for (const button of table.querySelectorAll(".rank-sort")) button.addEventListener("click", () => show(button.dataset.sort));
+    show(OPEN);
+    // A row is one player across both tables: pointing at it in either
+    // lights it in both.
+    const light = (index) => {
+      for (const row of table.querySelectorAll("tbody tr")) row.classList.toggle("is-hover", row.dataset.eloRow === index);
+    };
+    for (const body of Object.values(bodies)) {
+      body.addEventListener("mouseover", (event) => { const row = event.target.closest("tr"); if (row) light(row.dataset.eloRow); });
+      body.addEventListener("mouseleave", () => light(null));
+    }
+    // Scrolling either table sideways scrolls the other the same share of
+    // its own width.
+    const panes = [...table.querySelectorAll(".elo-scroll")];
+    let leading = null;
+    for (const pane of panes) {
+      pane.addEventListener("scroll", () => {
+        if (leading && leading !== pane) return;
+        leading = pane;
+        const span = pane.scrollWidth - pane.clientWidth, share = span > 0 ? pane.scrollLeft / span : 0;
+        for (const other of panes) if (other !== pane) other.scrollLeft = Math.round(share * (other.scrollWidth - other.clientWidth));
+        requestAnimationFrame(() => requestAnimationFrame(() => { if (leading === pane) leading = null; }));
+      });
+    }
+    // How each column was measured.
+    const fitted = SELF.map(([key, head, game]) => {
+      const s = selfView(key) && selfView(key).strategies;
+      return s && s.tables ? game + " " + head + " " + count(s.tables) : null;
+    }).filter(Boolean);
+    const waiting = SELF.filter(([key]) => !selfView(key)).map(([, head, game]) => game + " " + head);
+    const standing = CONTROL.filter(([key]) => controlStandsIn(key)).map(([, head]) => head);
+    const benchmark = CONTROL.map(([key]) => controlView(key)).map((v) => v && v.firaxis).filter(Boolean);
+    const newest = benchmark.map((f) => f.to).filter(Boolean).sort().pop();
+    const met = CONTROL.flatMap(([key]) => (controlView(key) && Array.isArray(controlView(key).people) ? controlView(key).people : []))
+      .reduce((n, p) => n + (p.games || 0), 0);
+    table.querySelector("[data-elo-note]").textContent =
+      (fitted.length ? "CIVVIS self-play, simulator tables of 250 turns, Online, at each setup: " + fitted.join(", ") + "." : "")
+      + (waiting.length ? " Not yet rated: " + waiting.join(", ") + "." : "")
+      + " A victory alone that nobody reaches by the turn limit is settled on score."
+      + " A level’s self-play figure is the simulator’s stand-in for it, our agent with that level’s handicap; at Prince it is the scale’s anchor, 1000."
+      + (benchmark.length ? " The classic Firaxis AI in Civilization VI: 6P Continents Online benchmark games of the last " + benchmark[0].days + " days"
+        + (newest ? " through " + day(newest) : "") + ", " + CONTROL.filter(([key]) => controlView(key) && controlView(key).firaxis)
+          .map(([key, head]) => count(controlView(key).firaxis.games) + " " + head).join(" and ") + "." : "")
+      + (standing.length ? " " + standing.join(" and ") + " in Civilization VI " + (standing.length === 1 ? "is" : "are") + " read against the four-player fit until the six-player one is published." : "")
+      + (met ? " People: " + count(met) + (met === 1 ? " hot seat game" : " hot seat games") + " against the agents in Civilization VI itself, each agent at its Elo when the game began." : "")
+      + " The Scale of Cheating counts the steps of the bonuses Civilization VI hands its own AI over Prince; the CIVVIS AI and people play with none."
+      + " ± is the 95% margin of error.";
+    table.hidden = false;
+    const card = table.closest("section");
+    if (card) card.hidden = false;
   })();
+  // elo-table: end
   </script>
   <script>
   // The video tiles. A tile's video is its `data-video`, and the fastest
