@@ -247,6 +247,10 @@ check("not ourselves", order("deal", 2, "PROPOSE;give=GOLD=5"), "deal_target_unm
 check("nothing incoming to accept", order("deal", 0, "ACCEPT"), "deal_none_incoming")
 check("nothing pending to withdraw", order("deal", 1, "WITHDRAW"), "deal_not_pending")
 check("no session for a refusal", logged("session:"), 0)
+check("a refusal is written down for the verdict", last("deal_refused") ~= nil, true)
+check("with the seat", field(last("deal_refused"), "to"), "1")
+check("the verb", field(last("deal_refused"), "verb"), "WITHDRAW")
+check("and the mod's reason", field(last("deal_refused"), "why"), "deal_not_pending")
 check("no send for a refusal", logged("send:"), 0)
 
 -- The person's offer: Dyes for 30 turns against 5 Gold a turn.

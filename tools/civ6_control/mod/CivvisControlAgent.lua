@@ -14520,6 +14520,19 @@ CivvisTrade.seatOrder = function(player, pid, other, verb, x, turn)
 		verb = action, id = id, phase = "opening" });
 	return true, CivvisTrade.SEAT_DONE[action];
 end;
+-- The order arm's entry: `seatOrder`, and a refusal written down as
+-- `deal_refused` (seat, verb, reason) for the next turn's verdict, which the
+-- decider reads (`hotseat_deals::verify`): the `orders` row counts refusals
+-- by reason only, so a refused proposal read as "not pending" whatever the
+-- mod had said.
+CivvisTrade.seatApply = function(player, pid, other, verb, x, turn)
+	local ok, why = CivvisTrade.seatOrder(player, pid, other, verb, x, turn);
+	if not ok then
+		emit("deal_refused", { turn = turn, to = tonumber(other),
+			verb = string.match(tostring(verb or ""), "^(%u*)"), why = why });
+	end
+	return ok, why;
+end;
 -- Inside the session (`CivvisOnDiplomacyStatement`, our own opening
 -- statement): send, record what the engine holds right after, close.
 CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
@@ -17206,7 +17219,7 @@ local function applyOrder(player, pid, row, turn)
 	-- and the enacted trade shows in the next export as gold up and the
 	-- stock or favor down.
 	-- Hotseat deals between seats: see `CivvisTrade.seatOrder`.
-	if kind == "deal" then return CivvisTrade.seatOrder(player, pid, subject, verb, x, turn); end
+	if kind == "deal" then return CivvisTrade.seatApply(player, pid, subject, verb, x, turn); end
 	if kind == "sell" then
 		if subject < 0 then return false, "sell_target_unmapped"; end
 		-- No deal AI prices for a human seat: in hotseat a sale goes as a `deal`.
