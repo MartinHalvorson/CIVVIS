@@ -11232,6 +11232,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 		units = units,
 		trade_routes = tradeRoutes,
 		rivals = rivals,
+		-- Hotseat only: the deals other seats have put to us and ours to
+		-- them (`CivvisTrade.seatBoard`); nil, so absent, everywhere else.
+		deals = try(function() return CivvisTrade.seatBoard(player, pid, turn); end, nil),
 		minors = minors,
 		-- ★★★★★ THE ENVOYS WE ARE HOLDING BUT NEVER SPEND.
 		--
@@ -13713,6 +13716,233 @@ CivvisTrade.luxuryQuote = function(pending, worth)
 		and string.find(pending.want, "^RESOURCES:") ~= nil
 		and pending.strategic == nil and pending.cash_bid_requested ~= true
 		and pending.cash_offer_bid == nil and worth == 0;
+end;
+
+-- ★★★★ HOTSEAT DEALS: WHAT THE OTHER SEATS HAVE PUT ON THE TABLE (deals v1;
+-- the contract is ~/civvis-civ6-runs/hotseat/findings/trade-deals-design.md).
+-- In a hotseat game every major is a human seat, so no deal AI ever answers
+-- (an EQUALIZE ask of a human seat expired unanswered, selfplay-duel-
+-- 20261127T0654Z-p0 t54->t60), and a deal one seat PROPOSES to another stays
+-- pending until somebody acts on it: the shipped screen never auto-evaluates a
+-- human's side (`IsAutoPropose` is false for one, DLC/Expansion2/UI/
+-- Replacements/DiplomacyDealView.lua:976-990), Propose sends `PROPOSED`
+-- (:156), and leaving closes the session but not the deal (`OnResumeGame`,
+-- :657-665). Live 2026-11-28 the person proposed to seat 4 at t12 and
+-- cancelled it, still unanswered, at t27 (net_message_debug.log `DiplomacyDeal:
+-- eActionType=8, eFromPlayer=0, eToPlayer=4`; CLOSED goes out only for a
+-- pending deal to a human, :630-633) -- then declared war on seat 4. Nothing of
+-- ours ever looked. This reads, on the seat's own turn and changing nothing:
+--   * every other seat's pending deal to us (`DealManager.HasPendingDeal(them,
+--     us)`), with its items read from our INCOMING working deal (what the
+--     shipped screen shows the recipient, `MakeDeal_TestValid`, Base/Assets/UI/
+--     DiplomacyActionView.lua:2612-2623) or, when that is empty, from their
+--     OUTGOING one, and the record says which (`source`);
+--   * our own pending deal to each seat, and what became of it once it is no
+--     longer pending (`deal_outcome`): the answer itself arrives on THEIR turn
+--     as `Events.DiplomacyIncomingDeal` (the shipped screen's own listener,
+--     DiplomacyDealView.lua:2805-2820), which `seatHeard` writes down for us;
+--   * `deal_probe`: how this build presents a pending deal to its recipient,
+--     which no shipped script says (the DIPLOMACY_SESSION notification's
+--     activation "is handled by the C++ side", Base/Assets/UI/Panels/
+--     NotificationPanel.lua:1403-1405). The next live check reads it.
+-- The board carries it as `deals` for the decider. Hotseat only: every other
+-- install's board and ledger are byte for byte as before. Fields of
+-- CivvisTrade: the main chunk is at its local ceiling.
+CivvisTrade.seat = { v = 1, seen = {}, mine = {}, outcomes = {}, heard = {},
+	refused = {}, probed = nil };
+-- Who plays `other`: a CIVVIS seat (`HotseatSeats`), a Firaxis AI, or else the
+-- person (their seat, or the test stand-in that plays it).
+CivvisTrade.seatKind = function(other)
+	for _, seat in ipairs(cfg.HotseatSeats or {}) do
+		if tonumber(seat) == other then return "civvis"; end
+	end
+	if try(function() return Players[other]:IsHuman(); end, nil) == false then return "ai"; end
+	return "person";
+end;
+-- One deal item as the board carries it, read the way the shipped screen
+-- reads it (DiplomacyDealView.lua `PopulateDealResources` :2244-2290: type,
+-- from-player, duration 0 = one time, `GetAmount`, a resource's `GetValueType`
+-- index; agreements by `GetSubType`; a Great Work as the sell arm builds it,
+-- SubType = its GreatWorks row, ValueType = the instance).
+CivvisTrade.seatItem = function(item)
+	local kind = try(function() return item:GetType(); end, nil);
+	local amount = try(function() return item:GetAmount(); end, nil);
+	local duration = try(function() return item:GetDuration(); end, nil) or 0;
+	local value = try(function() return item:GetValueType(); end, nil);
+	local sub = try(function() return item:GetSubType(); end, nil);
+	if kind == DealItemTypes.GOLD then
+		return { type = "GOLD", amount = amount, duration = duration };
+	elseif kind == DealItemTypes.RESOURCES then
+		local row = try(function() return GameInfo.Resources[value]; end, nil);
+		return { type = "RESOURCE", name = row ~= nil and row.ResourceType or tostring(value),
+			amount = amount, duration = duration };
+	elseif DealItemTypes.FAVOR ~= nil and kind == DealItemTypes.FAVOR then
+		return { type = "FAVOR", amount = amount };
+	elseif kind == DealItemTypes.AGREEMENTS then
+		local out = { type = "AGREEMENT", duration = duration };
+		for name, v in pairs(DealAgreementTypes or {}) do
+			if v == sub then out.name = name; end
+		end
+		out.name = out.name or tostring(sub);
+		if out.name == "JOINT_WAR" or out.name == "THIRD_PARTY_WAR" then out.target = value; end
+		return out;
+	elseif kind == DealItemTypes.GREATWORK then
+		local row = sub ~= nil and try(function() return GameInfo.GreatWorks[sub]; end, nil) or nil;
+		return { type = "GREATWORK", instance = value, name = row ~= nil and row.GreatWorkType or nil };
+	elseif DealItemTypes.CITIES ~= nil and kind == DealItemTypes.CITIES then
+		return { type = "CITY", city = value };
+	elseif DealItemTypes.CAPTIVE ~= nil and kind == DealItemTypes.CAPTIVE then
+		return { type = "CAPTIVE", unit = value };
+	end
+	return { type = "OTHER", raw = tostring(kind) };
+end;
+-- A deal's two sides from `pid`'s chair, and its id: a 31-bit hash of the
+-- sorted item keys, so the same items in any order are the same deal and
+-- every change of an amount or a duration is a new one. (Kept under 2^31 so
+-- Lua's doubles hold every step exactly.)
+CivvisTrade.seatSides = function(deal, pid)
+	local give, get, keys = {}, {}, {};
+	for item in deal:Items() do
+		local entry = CivvisTrade.seatItem(item);
+		local ours = try(function() return item:GetFromPlayerID(); end, nil) == pid;
+		local list = ours and give or get;
+		list[#list + 1] = entry;
+		keys[#keys + 1] = table.concat({ ours and "give" or "get", entry.type,
+			tostring(entry.name or ""), tostring(entry.amount or ""), tostring(entry.duration or ""),
+			tostring(entry.instance or entry.city or entry.unit or entry.target or entry.raw or "") }, "|");
+	end
+	table.sort(keys);
+	local text, h = table.concat(keys, ";"), 7;
+	for i = 1, #text do h = (h * 31 + string.byte(text, i)) % 2147483647; end
+	return give, get, h, #keys;
+end;
+-- The answer to OUR proposal, heard on the other seat's turn. Record only:
+-- nothing is sent, nothing else is read. Registered ungated in hotseat
+-- (Initialize), so it keeps a note for this seat alone.
+CivvisTrade.seatHeard = function(fromPlayer, toPlayer, action)
+	CivvisK.guard(function()
+		if cfg.Hotseat ~= true or CivvisSeat.seat == nil or toPlayer ~= CivvisSeat.seat then return; end
+		if cfg.RequireHarness == true and not CivvisHarness.live() then return; end
+		local name = tostring(action);
+		for key, v in pairs(DealProposalAction or {}) do
+			if v == action then name = key; end
+		end
+		CivvisTrade.seat.heard[fromPlayer] = { action = name,
+			turn = try(function() return Game.GetCurrentGameTurn(); end, -1) };
+	end);
+end;
+CivvisTrade.SEAT_OUTCOME = { ACCEPTED = "accepted", REJECTED = "rejected",
+	REJECTED_PERMANENT = "rejected", ADJUSTED = "countered", CLOSED = "closed" };
+-- The `deals` board (nil outside hotseat), with its records once per turn.
+CivvisTrade.seatBoard = function(player, pid, turn)
+	if cfg.Hotseat ~= true or CivvisSeat.seat == nil then return nil; end
+	local seat = CivvisTrade.seat;
+	local firstLook = seat.probed ~= turn;
+	seat.probed = turn;
+	local board = { v = 1, incoming = {}, outgoing = {}, outcomes = seat.outcomes,
+		refused_by_person = {}, counterparts = {} };
+	local probe = { turn = turn, seats = {} };
+	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, nil) or {}) do
+		if other ~= pid and diplomacy ~= nil
+				and try(function() return diplomacy:HasMet(other); end, false) == true then
+			local kind = CivvisTrade.seatKind(other);
+			board.counterparts[#board.counterparts + 1] = { player = other, kind = kind };
+			-- Theirs to us.
+			local theirs = try(function() return DealManager.HasPendingDeal(other, pid); end, nil);
+			local incoming = try(function()
+				return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, other);
+			end, nil);
+			local inCount = incoming ~= nil and try(function() return incoming:GetItemCount(); end, 0) or 0;
+			local deal, source = incoming, "incoming";
+			if theirs == true and (inCount or 0) == 0 then
+				deal = try(function() return DealManager.GetWorkingDeal(DealDirection.OUTGOING, other, pid); end, nil);
+				source = "their_outgoing";
+			end
+			local seen = seat.seen[other];
+			if theirs == true and deal ~= nil then
+				local give, get, id, count = CivvisTrade.seatSides(deal, pid);
+				if count > 0 then
+					if seen == nil or seen.id ~= id then
+						seen = { id = id, first = turn };
+						seat.seen[other] = seen;
+						emit("deal_incoming", { turn = turn, from = other, from_kind = kind, id = id,
+							give = give, get = get, source = source });
+					end
+					board.incoming[#board.incoming + 1] = { from = other, from_kind = kind, id = id,
+						first_seen_turn = seen.first, pending_turns = turn - seen.first,
+						gift = #give == 0, source = source, give = give, get = get };
+				end
+			elseif seen ~= nil then
+				seat.seen[other] = nil;
+			end
+			-- Ours to them, and what became of it.
+			local ours = try(function() return DealManager.HasPendingDeal(pid, other); end, nil);
+			local mine = seat.mine[other];
+			if ours == true then
+				local out = try(function()
+					return DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, other);
+				end, nil);
+				local give, get, id, count = {}, {}, nil, 0;
+				if out ~= nil then give, get, id, count = CivvisTrade.seatSides(out, pid); end
+				if mine == nil then
+					mine = { id = id, first = turn };
+					seat.mine[other] = mine;
+					seat.heard[other] = nil;
+				end
+				board.outgoing[#board.outgoing + 1] = { to = other, to_kind = kind, id = mine.id,
+					proposed_turn = mine.first, pending_turns = turn - mine.first,
+					give = give, get = get, items = count };
+			elseif ours == false and mine ~= nil then
+				seat.mine[other] = nil;
+				local heard = seat.heard[other];
+				seat.heard[other] = nil;
+				local outcome = heard ~= nil and CivvisTrade.SEAT_OUTCOME[heard.action] or nil;
+				if outcome == nil and theirs == true then outcome = "countered"; end
+				local entry = { with = other, kind = kind, id = mine.id, proposed_turn = mine.first,
+					turn = turn, outcome = outcome or "closed",
+					heard = heard ~= nil and heard.action or nil };
+				table.insert(seat.outcomes, entry);
+				while #seat.outcomes > 8 do table.remove(seat.outcomes, 1); end
+				if kind == "person" and entry.outcome ~= "accepted" and entry.outcome ~= "countered"
+						and mine.id ~= nil then
+					seat.refused[mine.id] = turn;
+				end
+				local record = { turn = turn };
+				for key, value in pairs(entry) do record[key] = value; end
+				emit("deal_outcome", record);
+			end
+			probe.seats[#probe.seats + 1] = { player = other, kind = kind,
+				pending_from_them = theirs, incoming_items = inCount, pending_from_us = ours,
+				open_session = try(function() return DiplomacyManager.FindOpenSessionID(pid, other); end, nil) };
+		end
+	end
+	for id, when in pairs(seat.refused) do
+		board.refused_by_person[#board.refused_by_person + 1] = { id = id, turn = when };
+	end
+	if firstLook then
+		probe.queued_session = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil);
+		-- Iterated as the shipped scenario panels iterate it
+		-- (DLC/CivRoyaleScenario/UI/Replacements/NotificationPanel_CivRoyaleScenario.lua:33-36,
+		-- `NotificationManager.GetList(playerID)` then `Find` by id), and the one
+		-- type asked directly (`FindType`, Base/Assets/UI/ActionPanel.lua:454).
+		probe.diplomacy_session = try(function()
+			return NotificationManager.FindType(NotificationTypes.DIPLOMACY_SESSION, pid) ~= nil;
+		end, nil);
+		local diplo, total = {}, 0;
+		CivvisK.guard(function()
+			for _, id in pairs(NotificationManager.GetList(pid) or {}) do
+				total = total + 1;
+				local name = try(function() return NotificationManager.Find(pid, id):GetTypeName(); end, nil);
+				if type(name) == "string" and string.find(name, "DIPLO", 1, true) ~= nil then
+					diplo[#diplo + 1] = name;
+				end
+			end
+		end);
+		probe.notifications, probe.diplomacy_notifications = total, diplo;
+		emit("deal_probe", probe);
+	end
+	return board;
 end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
@@ -30665,6 +30895,11 @@ function Initialize()
 	end
 	-- A second listener: an open escape is re-read when our turn begins.
 	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisSeat.gate(CivvisLedger.flushSpyMissions)); end);
+	-- Hotseat deals: the answer to this seat's proposal comes on the other
+	-- seat's turn, so it is heard ungated; `seatHeard` only writes it down.
+	if cfg.Hotseat == true and CivvisSeat.seat ~= nil then
+		pcall(function() Events.DiplomacyIncomingDeal.Add(CivvisTrade.seatHeard); end);
+	end
 	-- Hotseat: the end screen's "Just One More Turn" (`CivvisSeat.oneMoreTurn`).
 	if cfg.Hotseat == true then
 		pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn); end);
