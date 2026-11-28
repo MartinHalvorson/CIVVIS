@@ -537,6 +537,9 @@ GENOMES = ("live", "stock")
 DEPLOY_DIR = (Path(getattr(sys, "_MEIPASS", HERE)) / "deploy" if FROZEN
               else HERE.parent / "deploy")
 LIVE_FORCE_FILE = DEPLOY_DIR / "live-force-on.txt"
+#: Genes armed for a person's hotseat game on top of the ladder's list
+#: (`hotseat_treatments`): read only here, never by the ladder.
+HOTSEAT_FORCE_FILE = DEPLOY_DIR / "hotseat-force-on.txt"
 LOCAL_FORCE_FILE = Path.home() / ".civvis-live-force-on"
 #: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`, the same file from a checkout).
 MOD_ARMS_FILE = DEPLOY_DIR / "live-mod-arms.txt" if FROZEN else play.TREE_MOD_ARMS_FILE
@@ -579,6 +582,18 @@ def live_treatments(environ=None, repo_file: Path | None = None,
     if repo is not None:
         return force_tags(repo), "deploy/live-force-on.txt"
     return [], "no live list in this install"
+
+
+def hotseat_treatments(path: Path | None = None) -> list[str]:
+    """The hotseat-only genes (`deploy/hotseat-force-on.txt`): one tag a line,
+    `#` to the end of a line a note. The gameplay lanes' genes for a person's
+    game (findings 2026-11-28): before this the only way to arm one for a
+    hotseat seat was `CIVVIS_WITH`, which replaces the ladder's whole list."""
+    try:
+        text = (HOTSEAT_FORCE_FILE if path is None else path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return force_tags("\n".join(line.split("#", 1)[0] for line in text.splitlines()))
 
 
 def genome_forced(stderr: str) -> list[str] | None:
@@ -664,15 +679,20 @@ def live_genome(args: argparse.Namespace, binary: Path, run_dir: Path, log) -> d
     log and kept in the run directory (`GENOME_RECORD`); `args.treatments` is
     then the `--with` list for every seat's worker and the mod's keys."""
     if getattr(args, "genome", "live") == "stock":
-        record = {"genome": "stock", "source": "--genome stock", "listed": 0,
+        record = {"genome": "stock", "source": "--genome stock", "listed": 0, "hotseat": [],
                   "with": [], "forced": [], "dropped": [], "note": ""}
     else:
         wanted, source = live_treatments()
-        record = {"genome": "live", "source": source, "listed": len(wanted),
+        # The hotseat-only genes, after the ladder's, each once.
+        extra = [tag for tag in hotseat_treatments() if tag not in wanted]
+        if extra:
+            wanted = wanted + extra
+            source = f"{source} + deploy/hotseat-force-on.txt ({len(extra)})"
+        record = {"genome": "live", "source": source, "listed": len(wanted), "hotseat": extra,
                   **armed_treatments(binary, wanted, run_dir)}
     args.treatments = record["with"]
-    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "forced",
-                                                       "dropped", "note")}
+    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "hotseat",
+                                                       "forced", "dropped", "note")}
     (run_dir / GENOME_RECORD).write_text(json.dumps(record, indent=2))
     if record["genome"] == "stock":
         log("decider genome: stock (--genome stock): the deployment genome with no live genes "
@@ -702,8 +722,8 @@ def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
                   "with": [], "forced": [], "dropped": [], "note": ""}
     args.genome = record.get("genome") or "stock"
     args.treatments = list(record.get("with") or [])
-    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "forced",
-                                                           "dropped", "note")}
+    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "hotseat",
+                                                           "forced", "dropped", "note")}
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
@@ -3763,9 +3783,10 @@ def main(argv: list[str] | None = None) -> int:
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
     ap.add_argument("--genome", choices=GENOMES, default="live",
                     help="what the CIVVIS seats play: `live` (default) the live ladder's "
-                         "genes (deploy/live-force-on.txt, or this host's override) and mod "
-                         "arms (deploy/live-mod-arms.txt), as far as the decider takes them; "
-                         "`stock` the bare deployment genome, for comparison")
+                         "genes (deploy/live-force-on.txt, or this host's override), the "
+                         "hotseat-only genes on top (deploy/hotseat-force-on.txt) and the "
+                         "ladder's mod arms (deploy/live-mod-arms.txt), as far as the decider "
+                         "takes them; `stock` the bare deployment genome, for comparison")
     ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
                     help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
                          f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "
