@@ -453,6 +453,174 @@ class FitOnScreenTest(unittest.TestCase):
         self.assertEqual(self.fit(None), (None, []))
 
 
+#: What `civvis_orders` writes first on stderr: its genome (the live game's
+#: decider, 0512deb6, asked with the whole live list, 2026-11-28; shortened).
+GENOME_LINE = json.dumps({"civ": None, "forced": ["age-closer-2", "recon-replacement"], "kind": "genome",
+                          "lane": None, "ledger_withheld": ["war-reinforcement"]})
+#: ...and what it says when a `--with` is one it does not know (the same binary).
+REFUSED = ('civvis-orders: unknown --with treatment "no-such-tag"; this binary can force: '
+           "war-reinforcement, come-ashore, recon-replacement, age-closer-2\n")
+
+
+class LiveGenomeTest(unittest.TestCase):
+    """The live six-player game (hotseat-20261128T031456Z): every seat's
+    brain.log said `forced=none`, every why.log the stock genes; 182 of the
+    ladder's 285 live tags were off (`recon-replacement` among them: no seat
+    built a Scout), and its config held `StalledOperationRelease` false, so a
+    stalled Warrior held seat 3 for 7.9 s of the person's wait on turn 15."""
+
+    def test_the_list_is_resolved_as_the_ladders_supervisor_resolves_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, local, empty = Path(tmp) / "repo.txt", Path(tmp) / "local", Path(tmp) / "empty"
+            repo.write_text("recon-replacement,monument-first\n")
+            empty.write_text("")
+
+            def resolve(environ, local_text=None):
+                if local_text is None:
+                    local.unlink(missing_ok=True)
+                else:
+                    local.write_text(local_text)
+                return hotseat.live_treatments(environ, repo, local)
+
+            self.assertEqual(resolve({}), (["recon-replacement", "monument-first"], "deploy/live-force-on.txt"))
+            # A host's own list wins while it is not empty; an empty one is no override.
+            self.assertEqual(resolve({}, "chop-for-expansion")[0], ["chop-for-expansion"])
+            self.assertEqual(resolve({}, "  \n")[0], ["recon-replacement", "monument-first"])
+            # The environment's, and a named file's even when empty (the stock genome).
+            self.assertEqual(resolve({"CIVVIS_WITH": "a,b,a"}, "x")[0], ["a", "b"])
+            self.assertEqual(resolve({"CIVVIS_WITH_FILE": str(empty)}, "x"), ([], f"CIVVIS_WITH_FILE ({empty})"))
+            repo.unlink()
+            self.assertEqual(resolve({}), ([], "no live list in this install"))
+
+    @staticmethod
+    def decider(*answers):
+        """A `civvis_orders` that answers each ask in turn: (exit code, stderr)."""
+        asked = []
+
+        def run(command, **_):
+            asked.append([word for word in command[3:] if word != "--with"])
+            code, stderr = answers[min(len(asked), len(answers)) - 1]
+            return argparse.Namespace(returncode=code, stderr=stderr, stdout="")
+        return run, asked
+
+    def test_the_decider_is_asked_first_and_keeps_only_what_it_can_play(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run, asked = self.decider((0, GENOME_LINE + "\n"))
+            armed = hotseat.armed_treatments(Path("/bin/civvis_orders"), ["age-closer-2", "recon-replacement",
+                                                                         "monument-first"], Path(tmp), run)
+            self.assertEqual(armed["with"], ["age-closer-2", "recon-replacement", "monument-first"])
+            self.assertEqual(armed["forced"], ["age-closer-2", "recon-replacement"], "the decider's own word")
+            self.assertEqual(asked, [["age-closer-2", "recon-replacement", "monument-first"]])
+            self.assertFalse((Path(tmp) / "genome-check").exists(), "the empty board is cleaned up")
+            # A tag this binary does not know would kill every worker at its start.
+            # Only the tags it names go: `monument-first` is not in its "can force"
+            # list because its deployment genome already plays it, and it is kept.
+            held = ('civvis-orders: --with treatment "not-held" is not a ledger-held live treatment or '
+                    'held-off opt-in (tag "not-held"); this binary can force: recon-replacement\n')
+            run, asked = self.decider((2, REFUSED), (2, held), (0, GENOME_LINE))
+            armed = hotseat.armed_treatments(Path("/bin/civvis_orders"),
+                                             ["recon-replacement", "no-such-tag", "monument-first", "not-held"],
+                                             Path(tmp), run)
+            self.assertEqual((armed["with"], armed["dropped"]),
+                             (["recon-replacement", "monument-first"], ["no-such-tag", "not-held"]))
+            self.assertEqual(asked[-1], ["recon-replacement", "monument-first"])
+            # A refusal that never ends is not asked forever.
+            run, asked = self.decider((2, REFUSED))
+            armed = hotseat.armed_treatments(Path("/bin/x"), ["no-such-tag"] * 1 + ["a"], Path(tmp), run)
+            self.assertEqual(armed["with"], [])
+            self.assertLessEqual(len(asked), hotseat.MOST_REFUSED)
+            # Refused with no list of its own, or not runnable: the stock genome, said.
+            run, _ = self.decider((2, "civvis-orders: something else\n"))
+            armed = hotseat.armed_treatments(Path("/bin/x"), ["recon-replacement"], Path(tmp), run)
+            self.assertEqual(armed["with"], [])
+            self.assertIn("the decider refused the list (civvis-orders: something else)", armed["note"])
+
+            def broken(command, **_):
+                raise OSError("no such file")
+            armed = hotseat.armed_treatments(Path("/bin/x"), ["recon-replacement"], Path(tmp), broken)
+            self.assertEqual((armed["with"], armed["dropped"]), ([], ["recon-replacement"]))
+            run, _ = self.decider((2, "civvis-orders: --with treatment(s) x already ship in the "
+                                      "deployment genome; name at least one\n"))
+            self.assertEqual(hotseat.armed_treatments(Path("/bin/x"), ["x"], Path(tmp), run)["with"], [])
+
+    def test_every_seats_worker_and_the_mod_play_the_live_arms(self) -> None:
+        command = hotseat.brain_command(Path("/r/hs-p2"), Path("/r/o.sqlite"), Path("/r/civvis_orders"),
+                                        "culture", ["recon-replacement", "culture-seat-allies"])
+        self.assertEqual(command[-4:], ["--with", "recon-replacement", "--with", "culture-seat-allies"])
+        with tempfile.TemporaryDirectory() as tmp:
+            arms = Path(tmp) / "live-mod-arms.txt"
+            arms.write_text("stalled-operation-release\ndebug-timescale-3\npoll-20ms\n")
+            with patch.object(hotseat, "MOD_ARMS_FILE", arms):
+                live = hotseat.hotseat_config(game_args(genome="live", treatments=["culture-seat-allies"]),
+                                              Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+                stock = hotseat.hotseat_config(game_args(genome="stock", treatments=[]),
+                                               Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertTrue(live["StalledOperationRelease"])
+        self.assertEqual(live["OrdersPeekSeconds"], 0.02)
+        # The key a live gene switches on in the mod, as on the ladder (`civ6_play.build_config`).
+        self.assertTrue(live["CultureAllies"])
+        # The ladder's debug timescale is not a person's game's.
+        self.assertIsNone(live["DebugTimeScale"])
+        self.assertIsNone(live["DebugTimeScaleAB"])
+        self.assertFalse(stock["StalledOperationRelease"])
+        self.assertIsNone(stock["OrdersPeekSeconds"])
+        self.assertFalse(stock["CultureAllies"])
+
+    def test_a_run_says_and_keeps_what_its_seats_play_and_an_attach_plays_the_same(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            lines: list[str] = []
+            args = game_args(genome="live")
+            run, _ = self.decider((2, REFUSED), (0, GENOME_LINE))
+            with patch.object(hotseat, "live_treatments",
+                              return_value=(["age-closer-2", "recon-replacement", "no-such-tag"],
+                                            "deploy/live-force-on.txt")), \
+                    patch.object(hotseat.subprocess, "run", side_effect=run):
+                hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(args.treatments, ["age-closer-2", "recon-replacement"])
+            self.assertIn("decider genome: the live ladder's, from deploy/live-force-on.txt: 2 of 3 listed "
+                          "genes armed, 2 of them beyond this decider's deployment genome", lines[0])
+            self.assertIn("cannot play 1 listed gene(s), so they are off: no-such-tag", lines[1])
+            # What a rated game was against is on its record.
+            monitor = hotseat.Monitor(run_dir, "hs", [1], game_args(players=2, name="dev", victories_off=[]),
+                                      lambda m: None)
+            self.addCleanup(monitor.close)
+            record = hotseat.table_record(monitor, args, [1], {})
+            self.assertEqual((record["genome"]["genome"], record["genome"]["forced"]),
+                             ("live", ["age-closer-2", "recon-replacement"]))
+            # A re-attached harness restarts the workers on the same list.
+            again = game_args()
+            hotseat.kept_genome(again, run_dir)
+            self.assertEqual((again.genome, again.treatments), ("live", ["age-closer-2", "recon-replacement"]))
+            # A run from before this armed nothing, and its re-attach arms nothing.
+            hotseat.kept_genome(again, run_dir / "older")
+            self.assertEqual((again.genome, again.treatments), ("stock", []))
+            # `--genome stock` asks nothing and arms nothing.
+            stock, lines = game_args(genome="stock"), []
+            with patch.object(hotseat.subprocess, "run") as asked:
+                hotseat.live_genome(stock, Path("/bin/civvis_orders"), run_dir, lines.append)
+            asked.assert_not_called()
+            self.assertEqual(stock.treatments, [])
+            self.assertIn("decider genome: stock", lines[0])
+
+    def test_live_is_the_default_and_stock_is_asked_for(self) -> None:
+        for flags, want in (([], "live"), (["--genome", "stock"], "stock")):
+            with patch.object(hotseat, "run", side_effect=lambda a: 0) as run, \
+                    patch.object(hotseat, "read_current", return_value=None):
+                hotseat.main(flags)
+            self.assertEqual(run.call_args.args[0].genome, want)
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        # Both loops' workers are started with the list...
+        self.assertEqual(source.count("treatments=args.treatments)"), 2)
+        # ...decided before the install that carries its mod keys, and kept by an attach.
+        run = source[source.index("def run(args"):]
+        self.assertLess(run.index("live_genome(args, binary, run_dir, log)"), run.index("config = hotseat_config("))
+        self.assertLess(run.index("kept_genome(args, run_dir)"), run.index("brains = Brains("))
+        manual = source[source.index("def run_manual("):source.index("def main(")]
+        self.assertLess(manual.index("live_genome(args, binary, run_dir, log)"),
+                        manual.index("config = manual_lobby_config("))
+
+
 class StaleWorkerTest(unittest.TestCase):
     """A seat never ends up with two decision workers."""
 

@@ -468,7 +468,7 @@ CHILD = textwrap.dedent(r"""
     hotseat.apply_person_options = refuse
     started = []
     class FakeBrains:
-        def __init__(self, run_dir, tag, seats, orders_db, binary, victory, log):
+        def __init__(self, run_dir, tag, seats, orders_db, binary, victory, log, treatments=None):
             started.append(list(seats))
         def start_all(self): pass
         def keep_alive(self): pass
