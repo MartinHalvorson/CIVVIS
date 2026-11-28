@@ -6708,6 +6708,14 @@ pub const GENES: &[Gene] = &[
     // seat from its third city; science heads keep their queue. Opt-in; see
     // `advanced/culture_monuments.rs`.
     Gene { tag: "science-seat-monuments", field: "science_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_monuments, disable: AdvancedAi::disable_science_seat_monuments },
+    // Hotseat `hotseat-20261128T031456Z`, seat p3 (Cree, Science): the
+    // capital trained its first Settler from turn 7 past turn 16 at 3-4
+    // Production on a Food surplus of 4-8, with no citizen preference set.
+    // A Settler pump with Food to spare and Production of 5 or less asks the
+    // host for a Production focus until the Settler is done. Native seat
+    // only, and inert until the agent mod takes a Production focus. Opt-in;
+    // see `advanced/settler_pump_leans_on_production.rs`.
+    Gene { tag: "settler-pump-leans-on-production", field: "settler_pump_leans_on_production", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_pump_leans_on_production, disable: AdvancedAi::disable_settler_pump_leans_on_production },
     // Version one armed, the reviewer still named "spreaders scout instead of
     // spreading" in 35 of 40 Lv 8 tourney games (2026-11-27). Three searches
     // each took their own share of the corps: in t8-20261127T064630Z at t90
