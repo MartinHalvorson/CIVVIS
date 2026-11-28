@@ -453,6 +453,101 @@ class FitOnScreenTest(unittest.TestCase):
         self.assertEqual(self.fit(None), (None, []))
 
 
+class RelayTest(unittest.TestCase):
+    """The live six-player game (hotseat-20261128T031456Z, turns 1-15): a
+    seat's next board reached its decider 523 ms (median) after its last
+    answer, one loop pass, and the next seat's first board 1057 ms after, two
+    passes; the decider itself answers in 10 ms. The relay now runs every
+    20 ms between passes, and nothing else runs more often than it did."""
+
+    class Bridge:
+        def __init__(self, clock: list) -> None:
+            self.clock, self.at = clock, []
+
+        def pump(self) -> int:
+            self.at.append(self.clock[0])
+            return 0
+
+    def test_the_log_is_relayed_every_20_ms_through_the_pass(self) -> None:
+        clock = [100.0]
+        slept: list[float] = []
+
+        def sleep(seconds: float) -> None:
+            slept.append(seconds)
+            clock[0] += seconds
+
+        bridges = [self.Bridge(clock) for _ in range(6)]
+        hotseat.relay_for(bridges, 0.5, clock=lambda: clock[0], sleep=sleep)
+        self.assertAlmostEqual(clock[0], 100.5, places=6, msg="the pass keeps its length")
+        self.assertLessEqual(max(slept), 0.02 + 1e-9)
+        for bridge in bridges:
+            self.assertGreaterEqual(len(bridge.at), 25)
+            gaps = [b - a for a, b in zip([100.0] + bridge.at, bridge.at)]
+            self.assertLessEqual(max(gaps), 0.02 + 1e-9, "no board waits more than 20 ms")
+
+    def test_the_turn_loop_relays_between_its_passes_and_keeps_its_upkeep_cadence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = hotseat.hotseat_config(game_args(players=6, agents=["holy", "tourist", "moonshot",
+                                                                          "siege", "jack"], name="dev"),
+                                            root / "hs", root / "hs" / "orders.sqlite")
+            config["RunTag"] = "hs"
+            clock = [1000.0]
+            bridges: list = []
+            polls, alive_calls, ps_calls = [], [], []
+            passes = 8
+
+            def sleep(seconds: float) -> None:
+                clock[0] += seconds
+
+            class Liveness:
+                def alive(self) -> bool:
+                    alive_calls.append(clock[0])
+                    return len(alive_calls) <= passes
+
+            def bridge(run_dir, tag):
+                made = self.Bridge(clock)
+                bridges.append(made)
+                return made
+
+            def pids():
+                ps_calls.append(clock[0])
+                return [4242]
+
+            class Brains:
+                def __init__(self, *a, **k): pass
+                def start_all(self): pass
+                def keep_alive(self): pass
+                def stop(self): pass
+
+            # `run` leaves SIGTERM/SIGINT ignored on its way out: not in this process.
+            with patch.object(hotseat.signal, "signal"), \
+                    patch.object(hotseat, "RUN_ROOT", root), patch.object(hotseat, "CURRENT", root / "current.json"), \
+                    patch.object(hotseat.modinstall, "installed_config", return_value=config), \
+                    patch.object(hotseat.env, "game_pids", side_effect=pids), \
+                    patch.object(hotseat.gamelock, "acquire", return_value=True), \
+                    patch.object(hotseat.gamelock, "release"), \
+                    patch.object(hotseat.gamelock, "operator_halt_description", return_value=None), \
+                    patch.object(hotseat, "resolve_orders_bin", return_value=Path("/bin/sh")), \
+                    patch.object(hotseat.watch, "EventLogBridge", side_effect=bridge), \
+                    patch.object(hotseat.watch, "GameLiveness", Liveness), \
+                    patch.object(hotseat, "Brains", Brains), \
+                    patch.object(hotseat.Monitor, "poll", side_effect=lambda: polls.append(clock[0])), \
+                    patch.object(hotseat.time, "monotonic", side_effect=lambda: clock[0]), \
+                    patch.object(hotseat.time, "sleep", side_effect=sleep), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(hotseat.run(game_args(attach=True, tag=None, orders_bin=None,
+                                                       stall_seconds=180.0, turns=None)), 0)
+            self.assertEqual(len(bridges), 6, "the table's own log and one per CIVVIS seat")
+            loop_polls = len(polls) - 2           # less catch_up's and the last one
+            self.assertEqual(loop_polls, passes + 1, "the monitor reads once a pass")
+            self.assertEqual(len(alive_calls), passes + 1, "Civ VI is looked for once a pass")
+            self.assertEqual(len(ps_calls), 2, "no `ps` in the loop: the attach check and the cleanup")
+            for made in bridges:
+                self.assertGreaterEqual(len(made.at), 25 * passes, "the relay runs 25 times a pass")
+            self.assertIn("Civ VI has closed", (root / "hs" / "hotseat.log").read_text())
+
+
 class StaleWorkerTest(unittest.TestCase):
     """A seat never ends up with two decision workers."""
 
