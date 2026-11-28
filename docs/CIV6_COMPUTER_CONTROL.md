@@ -729,9 +729,9 @@ wedges fit the same pattern (holds refused at turn begin, every later request a
 no-op), but their net logs are gone. Three changes, all for the stand-in's own
 turn unless said otherwise:
 
-- its seat gate stays shut until `GameConfiguration.IsPaused()` reads false. The
-  shipped unit panel waits the same way after the hand-over closes
-  (UnitPanel.lua:2843-2858);
+- while its turn is active, its seat gate stays shut until
+  `GameConfiguration.IsPaused()` reads false. The shipped unit panel waits the
+  same way after the hand-over closes (UnitPanel.lua:2843-2858);
 - a step that finds the turn still active but reading as sent unreadies it
   where the game allows (ActionPanel.lua:535-537,
   `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`), or else sends SHIFT+ENTER's
