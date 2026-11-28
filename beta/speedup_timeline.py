@@ -385,11 +385,67 @@ def scale(multiplier: float) -> str:
     return times(multiplier)
 
 
-def ticks(goal: float) -> list[dict]:
+def where_played(stop: dict, seconds: float) -> dict:
+    """What a stop of the line is played on, as its words on the line say it
+    (`where`), and how that was established (`where_from`): the ledger's
+    `runs` (`native app`, Civilization VI itself; `native`, the CIVVIS
+    program built for the machine), and for a stop with a `browser` entry,
+    the same games in the browser, the reading times the measured `ratio`.
+    Empty for a stop that says neither."""
+    runs, browser = stop.get("runs"), stop.get("browser")
+    if not runs:
+        return {}
+    out = {"where": runs}
+    if isinstance(browser, dict) and float(browser.get("ratio") or 0) > 0:
+        ratio = float(browser["ratio"])
+        out["where"] = f"{runs} · {clock(seconds * ratio)} in the browser"
+        out["browser_seconds"] = round(seconds * ratio, 3)
+        out["where_from"] = (f"In the browser (the site's WebAssembly build) the same games take {ratio:g} times as long as on the "
+                             f"native program: {browser.get('from', '')}").strip()
+    return out
+
+
+def ticks(goal: float, base: float | None = None) -> list[dict]:
     """The marks along the line: every tenfold from 1x up to the multiplier
-    the line ends at (`goal`), and that multiplier itself at its end."""
+    the line ends at (`goal`), and that multiplier itself at its end. With
+    the time a game by hand takes (`base`, seconds), each mark also says
+    what it comes to, for the line's two scales (operator 2026-11-27: "we
+    can also have a time / game measure along the top and a games / time
+    measure along the bottom"): the time one game takes at that pace
+    (`per_game`) and how many games that is in an hour, a minute or a
+    second (`per_time`)."""
     marks = [10**power for power in range(math.ceil(math.log10(goal)))] + [goal]
-    return [{"times": scale(mark), "at": round(math.log(mark) / math.log(goal), 4)} for mark in marks]
+    out = []
+    for mark in marks:
+        tick = {"times": scale(mark), "at": round(math.log(mark) / math.log(goal), 4)}
+        if base:
+            tick["per_game"] = f"{fine_clock(base / mark)}/game"
+            tick["per_time"] = per_time(mark / base)
+        out.append(tick)
+    return out
+
+
+def fine_clock(seconds: float) -> str:
+    """A time on the line's top scale: as `clock` words it, but a tenth of a
+    millisecond under ten, so that a tenfold scale reads `1.8 ms`, `18 ms`,
+    `180 ms`, and not `2 ms` once."""
+    if 0.0009995 <= seconds < 0.00995:
+        return f"{seconds * 1000:.1f} ms".replace(".0 ", " ")
+    return clock(seconds)
+
+
+def per_time(games: float) -> str:
+    """Games in a stretch of time, as the line's bottom scale words them: an
+    hour, a minute or a second, the longest that leaves less than a hundred
+    or so, and at least one: `0.2 games/h`, `20 games/h`, `3.3 games/min`,
+    `33.3 games/min`, `5.6 games/s`, `556 games/s` (`games` a second)."""
+    if games * 60 < 1:
+        figure, unit = rate(games * 3600), "h"
+    elif games < 1:
+        figure, unit = rate(games * 60), "min"
+    else:
+        return per_second(games)
+    return f"{figure} {'game' if figure == '1' else 'games'}/{unit}"
 
 
 def marked(ledger: dict) -> list[dict]:
@@ -713,6 +769,15 @@ def timeline(source: pathlib.Path) -> dict | None:
             }
             if now.get("from"):
                 row["from"] = now["from"]
+            # What the stop is played on (operator 2026-11-27: "note that
+            # firaxis (native app) and civvis (browser)", "if thats true",
+            # "if we have different speeds for browser and native speeds too
+            # we should note that"): Civilization VI is a native app, and
+            # CIVVIS's own games are timed on the native program, which the
+            # browser's WebAssembly build plays more slowly; where the
+            # ledger has measured by how much, the browser's time is given
+            # too, worked out from this reading.
+            row.update(where_played(stop, now["seconds"]))
             # A reading worked out from other measurements, not timed itself.
             if now.get("worked"):
                 row["worked"] = True
@@ -760,7 +825,7 @@ def timeline(source: pathlib.Path) -> dict | None:
         "fastest": fastest["key"],
         "reach": fastest["at"],
         "goals": goals,
-        "ticks": ticks(goal),
+        "ticks": ticks(goal, base),
         "stops": stops,
     }
     if "was" in fastest:
