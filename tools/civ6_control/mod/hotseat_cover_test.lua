@@ -961,6 +961,9 @@ do
 	handlers.PlayerChange_Close(0)
 	assert(math.abs(tonumber(field(last(did, "hotseat_cover"), "waited")) - 8.75) < 1e-9)
 	assert(math.abs(cover.tailTimes[0][1] - 1) < 1e-9)
+	-- Up and down are stamped with the UI clock (the seats' `end_turn_wait.ui_now`).
+	assert(kinds(did, "hotseat_cover")[1]:find('"at":1000', 1, true), kinds(did, "hotseat_cover")[1])
+	assert(last(did, "hotseat_cover"):find('"at":903', 1, true))
 end
 
 -- What does not go on record: what the game menu was opened over, a wait the

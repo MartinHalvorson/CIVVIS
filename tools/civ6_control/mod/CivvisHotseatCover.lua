@@ -393,8 +393,9 @@ function CivvisHotseatCover.raise(reason, force)
 		c.startWait(nil);
 		c.showWait();
 	end
+	-- `at`: the UI clock, so a wait can be laid against the seats' own records.
 	c.report("hotseat_cover", { { "up", queued }, { "reason", reason }, { "player", pid },
-		{ "turn", c.turn() } });
+		{ "turn", c.turn() }, { "at", c.clock() } });
 	c.sound(reason);
 	return queued;
 end
@@ -409,7 +410,7 @@ function CivvisHotseatCover.lift(reason, yield)
 	-- Their turn is back: the wait ran its course unless the cover stood aside.
 	local w = c.endWait(not yield and (reason == "person_start" or reason == "person_turn"));
 	c.report("hotseat_cover", { { "up", false }, { "reason", reason }, { "player", pid },
-		{ "turn", c.turn() }, { "quiet", c.quiet }, { "between", c.between },
+		{ "turn", c.turn() }, { "at", c.clock() }, { "quiet", c.quiet }, { "between", c.between },
 		{ "waited", w and w.elapsed }, { "estimate", w and w.estimate },
 		{ "timed", w and w.timed }, { "seats", w and #w.seen },
 		-- Each seat's turn ("seat:seconds") and the time left the bar gave as

@@ -40,12 +40,43 @@ local LIVE = {
 	{ turn = 16, waited = 11.36, tail = 2.71, seats = { { 1, 0.10, 1.10 }, { 2, 0.05, 1.70 }, { 3, 0.05, 1.43 }, { 4, 0.05, 2.04 }, { 5, 0.05, 2.08 } } },
 }
 
+-- A longer game: the 2-seat self-play rehearsal selfplay-duel-20261127T0808Z,
+-- 118 turns, each seat's turn (turns.jsonl, 0.5 s steps) as two CIVVIS seats
+-- of a three-seat table. It had no person and no cover, so the moment before
+-- each seat is 0.05 s and the last stretch 1.5 s, growing a second per 100
+-- turns (as the live game's rollover grew).
+local SELFPLAY_TURNS = {
+	{ 2.2, 1.1 }, { 1.1, 1.1 }, { 1.6, 1.6 }, { 1.1, 1.0 }, { 1.6, 1.1 }, { 1.0, 1.1 }, { 1.6, 1.0 },
+	{ 1.0, 2.1 }, { 1.1, 2.1 }, { 2.1, 1.6 }, { 2.6, 2.1 }, { 2.1, 1.6 }, { 1.1, 1.1 }, { 1.1, 1.6 },
+	{ 1.6, 1.6 }, { 1.1, 1.6 }, { 2.1, 0.5 }, { 1.6, 2.6 }, { 1.6, 1.0 }, { 2.6, 1.6 }, { 2.1, 1.0 },
+	{ 2.6, 1.0 }, { 2.1, 2.1 }, { 2.1, 1.6 }, { 2.2, 1.1 }, { 2.2, 0.5 }, { 2.2, 1.6 }, { 1.6, 2.2 },
+	{ 1.6, 2.1 }, { 2.2, 1.6 }, { 1.2, 1.1 }, { 1.1, 1.6 }, { 1.1, 1.6 }, { 1.6, 1.1 }, { 1.1, 1.7 },
+	{ 2.1, 1.1 }, { 2.2, 1.6 }, { 2.2, 2.1 }, { 1.6, 1.6 }, { 2.7, 1.6 }, { 2.7, 1.1 }, { 3.2, 1.7 },
+	{ 2.7, 1.6 }, { 3.3, 1.7 }, { 1.7, 1.6 }, { 2.3, 1.1 }, { 1.7, 1.6 }, { 1.1, 2.2 }, { 1.6, 2.1 },
+	{ 2.1, 10.5 }, { 2.1, 1.6 }, { 2.8, 3.7 }, { 1.6, 3.7 }, { 1.1, 1.6 }, { 1.1, 2.1 }, { 1.7, 2.2 },
+	{ 2.8, 1.1 }, { 1.6, 1.1 }, { 1.6, 1.6 }, { 1.6, 3.2 }, { 1.1, 1.1 }, { 1.6, 4.3 }, { 3.3, 2.1 },
+	{ 2.2, 3.2 }, { 1.6, 2.2 }, { 2.2, 3.9 }, { 1.7, 3.9 }, { 1.6, 1.7 }, { 2.2, 2.3 }, { 1.7, 3.3 },
+	{ 2.3, 1.6 }, { 2.2, 3.2 }, { 2.2, 3.8 }, { 2.8, 2.2 }, { 2.2, 1.7 }, { 2.2, 1.1 }, { 1.6, 2.2 },
+	{ 2.2, 1.6 }, { 16.4, 1.7 }, { 10.5, 2.2 }, { 1.1, 1.1 }, { 3.9, 1.7 }, { 3.9, 2.3 },
+	{ 2.8, 2.9 }, { 2.3, 1.1 }, { 9.9, 2.3 }, { 2.7, 2.2 }, { 1.7, 2.2 }, { 3.4, 2.2 }, { 3.4, 1.7 },
+	{ 3.9, 1.7 }, { 3.4, 2.3 }, { 3.4, 2.2 }, { 1.7, 1.7 }, { 2.2, 2.8 }, { 3.4, 2.2 }, { 3.4, 2.2 },
+	{ 1.7, 2.9 }, { 5.7, 2.8 }, { 3.4, 2.8 }, { 1.1, 1.1 }, { 2.2, 2.7 }, { 2.2, 2.7 }, { 3.3, 1.6 },
+	{ 3.8, 1.7 }, { 2.8, 2.2 }, { 2.2, 1.6 }, { 2.8, 2.2 }, { 2.2, 2.2 }, { 2.8, 2.8 }, { 1.7, 2.7 },
+	{ 2.2, 2.7 }, { 2.8, 4.4 }, { 1.6, 2.8 }, { 1.7, 2.8 }, { 2.2, 3.9 }, { 2.2, 4.6 }, { 3.4, 4.6 },
+}
+local SELFPLAY = {}
+for turn, seats in ipairs(SELFPLAY_TURNS) do
+	local tail = 1.5 + turn / 100
+	SELFPLAY[turn] = { turn = turn, tail = tail, waited = 0.15 + seats[1] + seats[2] + tail,
+		seats = { { 1, 0.10, seats[1] }, { 2, 0.05, seats[2] } } }
+end
+
 local DT = 0.05
 local BAR = 320
 
 -- The cover in a game where seat 0 is the person and seats 1-5 are CIVVIS's,
 -- driven by its own event handlers and frame update, the UI clock ours.
-local function load()
+local function load(seats)
 	local world = { pid = 0, turn = 1, active = {}, paused = {}, clock = 0 }
 	local bar = {}
 	local handlers = {}
@@ -53,7 +84,7 @@ local function load()
 		return setmetatable({ Add = function(f) handlers[name] = f end }, { __call = function() end })
 	end
 	local env = {
-		CivvisControlConfig = { Hotseat = true, RunTag = "replay", HotseatSeats = { 1, 2, 3, 4, 5 },
+		CivvisControlConfig = { Hotseat = true, RunTag = "replay", HotseatSeats = seats,
 			HotseatHumanSeats = { 0 }, HotseatCover = true, HotseatAutoStart = true,
 			HotseatCoverTimer = true },
 		include = function() end,
@@ -134,8 +165,8 @@ local function mean(list)
 end
 
 -- Every wait of `waits` through the cover and through the old estimate.
-local function replay(waits)
-	local cover, world, bar, handlers = load()
+local function replay(waits, seats)
+	local cover, world, bar, handlers = load(seats or { 1, 2, 3, 4, 5 })
 	local old = Old.new()
 	local new, was = metrics(), metrics()
 	-- The person's turn 1 is on when the game starts.
@@ -241,8 +272,8 @@ local function varied(waits, seats, tail, every, slow)
 	return out
 end
 
-local function check(name, waits, rules)
-	local new, was = replay(waits)
+local function check(name, waits, rules, seats)
+	local new, was = replay(waits, seats)
 	print(line(name .. ", before", was))
 	print(line(name .. ", now", new))
 	assert(new.back == 0, name .. ": the bar went back " .. new.back .. " times")
@@ -264,5 +295,7 @@ check("live game", LIVE, { early = 0.5, start = 0.1 })
 check("seats x0.2", varied(LIVE, 0.2, 0.5), { early = 0.5 })
 check("seats x6, slow 1 in 4", varied(LIVE, 6, 2, 4, 5), { early = 3 })
 check("slow turn 1 in 5", varied(LIVE, 1, 1, 5, 6), { early = 0.5, start = 0 })
+-- And a long game whose turns grow.
+check("self-play, 118 turns", SELFPLAY, { early = 0.5, start = 0 }, { 1, 2 })
 
 print("hotseat_cover_wait_test: ok")

@@ -640,15 +640,17 @@ near the end as the person's turn comes back. Before any seat's turn is known
 (the first seat of the first wait, a wait joined part-way) it sweeps; a seat
 with none of its own yet is taken to be like the others. What the game menu
 was opened over, and the end of a wait the cover stood aside in, are not
-learned from. The `hotseat_cover` lift record carries `waited`, `estimate`
-(the count at the wait's start), `timed`, `seats`, `took` (each seat's turn,
+learned from. Both `hotseat_cover` records carry `at` (the UI clock, as the
+seats' `end_turn_wait.ui_now`); the lift record also `waited`, `estimate` (the
+count at the wait's start), `timed`, `seats`, `took` (each seat's turn,
 `seat:seconds`) and `said` (the time left shown as each seat began), enough
 to replay the countdown from a live game. `hotseat_cover_wait_test.lua`
-replays the live game of 2026-11-27 (hotseat-20261128T031456Z) through it and
-through the whole-wait estimate it replaced: mean error of the time left 0.87 s
-against 1.45 s at the seat changes, 1.07 s against 1.70 s over all frames, and
-no "Any moment now" with time to go (6.4 s of it before). ⚠ The countdown is
-tests and replay only, not yet seen in a live game (2026-11-28).
+replays the live game of 2026-11-27 (hotseat-20261128T031456Z) and a 118-turn
+self-play through it and through the whole-wait estimate it replaced: in the
+live game, mean error of the time left 0.87 s against 1.45 s at the seat
+changes, 1.07 s against 1.70 s over all frames, and no "Any moment now" with
+time to go (6.4 s of it before). ⚠ The countdown is tests and replay only, not
+yet seen in a live game (2026-11-28).
 
 The test arrangement `--auto-human gated` puts a stub in the person's seat
 (`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
