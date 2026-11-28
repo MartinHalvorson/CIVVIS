@@ -598,6 +598,31 @@ quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
 `yield_*`), and the harness's screen rescue, which does not read the screen
 while the cover is up, sees the game again.
 
+**The cover is quiet, and says about how long** (`HotseatCoverSound`,
+`HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
+The cover hid pixels only: a CIVVIS seat's units, fights, chimes and voice
+lines were heard through it. While it is up over a turn that is not the
+person's, the script turns the sound buses that carry them to 0 the way the
+shipped end screen silences the music around its movie (EndGameMenu.lua:434-435
+`Options.SetAudioOption("Sound", "Music Volume", 0, 0)`, restored at :452):
+`music` (the default) turns down SFX, Ambience and Speech and lets the
+soundtrack play on, `silent` turns down Master. The last argument 0 is never
+the 1 that Options.lua:225-229 passes under "Confirm clicked: set audio
+system's .ini to slider values", so nothing is saved. The volumes are the
+person's again when their turn begins (before their hand-over is pressed),
+while the game menu is open over the cover (its Options screen reads and can
+save them), on every lift, and when the context shuts down; a bus the person
+keeps at 0 is never touched. Each change is one `hotseat_cover_sound` record
+with the first bus's volume before and the game's own reading after. The bar
+under the seat's name fills over the person's own recent waits (their end of
+turn to the start of their next, by `UI.GetElapsedTime()`: the last four,
+newest weighted most, a tenth added), straight to 85% and then ever slower,
+with "About 12 s" or "Any moment now" under it; a wait with none on record, or
+joined part-way, sweeps instead. A wait the cover stood aside in, or the game
+menu was opened over, is not learned from. `hotseat_cover` records carry
+`waited`, `estimate` and `timed` when the cover comes down. ⚠ Not yet seen in a
+live game (2026-11-27): `hotseat_cover_test.lua` sections 8-9 only.
+
 The test arrangement `--auto-human gated` puts a stub in the person's seat
 (`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
 the pressed hand-over treat it as the person, but the closers act on its turn

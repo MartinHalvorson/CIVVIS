@@ -22,7 +22,10 @@ single player: from the moment you end your turn a cover hides the screen
 ("CIVVIS is taking its turn") until your next turn begins, and then your
 hand-over "Start Turn" is pressed for you, the cover lifts, and you are on your
 own map where you left it. Esc on the cover opens the game menu (save, load,
-quit). On YOUR turn the terminal prints a banner (and macOS shows a
+quit). While it is up the jack seats' sounds are silenced and the soundtrack
+plays on (`--cover-sound silent` for no sound at all, `all` for everything),
+and a bar on it shows about how long is left, from how long your recent waits
+took (`--no-cover-timer` for none). On YOUR turn the terminal prints a banner (and macOS shows a
 notification): nothing of ours clicks, types, moves the camera or closes a
 screen until you end your turn. `--no-cover` shows the jack seats' turns as
 they play; `--keep-handover` leaves Civ VI's hand-over screen for you to press.
@@ -243,6 +246,10 @@ AGENT_HANDLES = {"jack": "JackOfAllTrades", "holy": "HolyRoller", "tourist": "To
                  "moonshot": "MoonshotMaven", "siege": "SiegeTheDay", "swing": "SwingVote"}
 
 
+#: `--cover-sound`: what is heard while the cover is up (CivvisHotseatCover.lua,
+#: `BUSES`); the first is the default.
+COVER_SOUNDS = ("music", "silent", "all")
+COVER_SOUND = COVER_SOUNDS[0]
 #: `--agents strongest`: the roster agent the ELO Rankings page rates highest.
 STRONGEST = "strongest"
 PUBLISHED_ELO = HERE.parent / "data" / "strategy_elo.json"
@@ -401,6 +408,15 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         # Diagnostic: CIVVIS-turn screens keep their shipped queueing under the
         # cover (CivvisControlAutoClose.lua, `CivvisCoverQueue`).
         "HotseatCoverQueue": person and not getattr(args, "no_cover_queue", False),
+        # What is heard through the cover (`--cover-sound`): `music` silences a
+        # jack seat's units, fights, chimes and voices and lets the soundtrack
+        # play on, `silent` turns everything down, `all` leaves the sound alone.
+        # And the wait bar with its time left (`--no-cover-timer`). Both are the
+        # cover's own: without it there is nothing to quiet or to wait behind.
+        "HotseatCoverSound": (getattr(args, "cover_sound", None) or COVER_SOUND
+                              if person and not getattr(args, "no_cover", False) else "all"),
+        "HotseatCoverTimer": (person and not getattr(args, "no_cover", False)
+                              and not getattr(args, "no_cover_timer", False)),
         # The operator's seat's difficulty, and every jack seat's: hotseat
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
@@ -2343,6 +2359,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep-handover", action="store_true",
                     help="leave Civ VI's hand-over screen for you to press Start Turn on "
                          "(default: it is pressed for you and your turn simply begins)")
+    ap.add_argument("--cover-sound", choices=COVER_SOUNDS, default=COVER_SOUND,
+                    help="what you hear while the cover is up: `music` (default) only the "
+                         "soundtrack, the jack seats' units, fights, chimes and voices "
+                         "silenced; `silent` nothing at all; `all` everything, as before. "
+                         "Your own volumes are back the moment your turn begins")
+    ap.add_argument("--no-cover-timer", action="store_true",
+                    help="no wait bar on the cover (default: a bar and about how long is "
+                         "left, from how long your recent waits took)")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")
@@ -2537,6 +2561,8 @@ def run(args: argparse.Namespace) -> int:
         # The installed game's own: an install from before these keys had neither.
         args.no_cover = not attach_config.get("HotseatCover")
         args.keep_handover = not attach_config.get("HotseatAutoStart")
+        args.cover_sound = attach_config.get("HotseatCoverSound") or "all"
+        args.no_cover_timer = not attach_config.get("HotseatCoverTimer")
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)
