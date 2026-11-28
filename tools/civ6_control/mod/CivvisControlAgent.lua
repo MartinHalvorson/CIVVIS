@@ -14277,7 +14277,28 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 		verb = session.verb, action = session.action, id = session.id, round = session.round,
 		session = sessionID or -1, sent = sent, why = why,
 		pending_from_them = theirs, pending_from_us = ours });
+	if sent and CivvisTrade.seatKind(other) == "person" then
+		pcall(CivvisTrade.seatNote, pid, other, session, turn);
+	end
 	CivvisTrade.close(pid, other, sent and "hotseat_sent" or "hotseat_not_sent");
+end;
+-- ★ THE PERSON HEARS WHAT A CIVVIS SEAT DID WITH THEIR DEAL (hotseat). The
+-- answer is sent on the seat's own turn, under the cover, and nothing in the
+-- shipped game tells the person who proposed it (a pending deal to a human
+-- is seen only by opening that leader, DiplomacyDealView.lua:1145/:1172). So
+-- each answer the person is owed goes into `ExposedMembers.CivvisDealNotes`
+-- (UI contexts share it), and CivvisHotseatCover.lua puts it on the cover:
+-- "TouristTrap accepted your deal." The last 8 only, numbered (`n`).
+CivvisTrade.seatNote = function(pid, other, session, turn)
+	local notes = ExposedMembers.CivvisDealNotes;
+	if type(notes) ~= "table" then
+		notes = { n = 0 };
+		ExposedMembers.CivvisDealNotes = notes;
+	end
+	notes.n = (tonumber(notes.n) or 0) + 1;
+	notes[#notes + 1] = { n = notes.n, seat = pid, to = other, verb = session.verb,
+		turn = turn, id = session.id };
+	while #notes > 8 do table.remove(notes, 1); end
 end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
