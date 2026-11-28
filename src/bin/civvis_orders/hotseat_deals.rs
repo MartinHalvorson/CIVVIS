@@ -148,7 +148,7 @@ pub(super) fn propose_order(
         &state.rivals,
         &board,
         &own_works(state),
-        true,
+        person_window || state.turn < u32::MAX,
     )?;
     let items = proposal.terms.render()?;
     Some((
