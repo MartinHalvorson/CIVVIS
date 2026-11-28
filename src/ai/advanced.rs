@@ -10829,6 +10829,12 @@ pub struct AdvancedAi {
     /// begun after the band turn. See `advanced/settler_walk_deadline.rs`.
     /// Off by default.
     settler_walk_clock_runs_all_game: bool,
+    /// `stacked-soldiers-step-apart`: when the unit pass is over, two or
+    /// more of our soldiers of one stacking layer still on one tile keep one
+    /// there and step the others onto free tiles beside it; the host refuses
+    /// a stacked unit every hold. See `advanced/stacked_soldiers_step_apart.rs`.
+    /// Off by default.
+    stacked_soldiers_step_apart: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11289,6 +11295,11 @@ pub struct AdvancedAi {
     /// weakest rival. See `advanced/tagma_timing_needs_the_edge.rs`. Off by
     /// default.
     tagma_timing_needs_the_edge: bool,
+    /// `wounded-spreader-spends-far-from-home`: a wounded Missionary or
+    /// Apostle more than a two-turn walk from any healing Holy Site spends its
+    /// charge at a target in this turn's reach instead of walking home. See
+    /// `advanced/apostle_army.rs`. Off by default.
+    wounded_spreader_spends_far_from_home: bool,
     /// `walls-for-the-war-front`: while at war with a major, an unwalled city
     /// that major's soldier was seen near starts its Walls. See
     /// `advanced/walls_for_the_war_front.rs`. Off by default.
@@ -12669,6 +12680,8 @@ mod spy_patience_reads_the_host;
 mod spy_targets;
 /// `stacked-shooter-steps-out`: see `advanced/stacked_shooter_steps_out.rs`.
 mod stacked_shooter_steps_out;
+/// `stacked-soldiers-step-apart`: see `advanced/stacked_soldiers_step_apart.rs`.
+mod stacked_soldiers_step_apart;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;

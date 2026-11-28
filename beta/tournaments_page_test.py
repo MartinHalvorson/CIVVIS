@@ -584,12 +584,12 @@ class TournamentsPage(unittest.TestCase):
         )
         self.assertIn(
             '      </div>\n'
+            '      <a class="site-link" href="../moneyball" '
+            'title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>\n'
             '      <a class="site-link" href="../doctor-strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s CIVVIS</a>\n'
             '      <a class="site-link" href="../edge-of-tomorrow" '
             'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>\n'
-            '      <a class="site-link" href="../moneyball" '
-            'title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>\n'
             '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../debugger" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>\n'
@@ -615,19 +615,23 @@ class TournamentsPage(unittest.TestCase):
         # The home page and the viewer name it second, before Charts/ (since
         # 2026-11-28; Charts joined between Home and this page on 2026-11-21
         # as Research, its own test is `research_page_test.py`), each in its
-        # own markup, and CIVVIS just above AI Debugger.
+        # own markup, CIVVIS: Moneyball right below Charts/ (2026-11-28:
+        # "please place moneyball right below charts"), and CIVVIS just
+        # above AI Debugger.
         for page, pattern in (
             (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                      r'[\s\S]*?>CIVVIS: Edge of Tomorrow</a>\s*<a class="site-link" href="\.\./moneyball"[^>]*>CIVVIS: Moneyball</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./moneyball"[^>]*>CIVVIS: Moneyball</a>'
+                      r'\s*<a class="site-link" href="\.\./doctor-strange"[^>]*>[^<]*</a>'
+                      r'[\s\S]*?>CIVVIS: Edge of Tomorrow</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'
                       r'\s*<a class="site-link" href="\.\./debugger"'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="moneyballlink" href="moneyball" target="_top">[^<]*</a>\s*'
                      r'<a class="home-link" id="strangelink" href="doctor-strange" target="_top">[^<]*</a>\s*'
                      r'<a class="home-link" id="tomorrowlink" href="edge-of-tomorrow" target="_top">[^<]*</a>\s*'
-                     r'<a class="home-link" id="moneyballlink" href="moneyball" target="_top">[^<]*</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>\s*'
                      r'<a class="home-link" id="playlink" href="debugger"'),
         ):

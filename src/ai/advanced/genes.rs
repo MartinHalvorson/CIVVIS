@@ -6726,6 +6726,13 @@ pub const GENES: &[Gene] = &[
     // after the band turn (t60 on Online), where most long walks began.
     // Opt-in; see `advanced/settler_walk_deadline.rs`.
     Gene { tag: "settler-walk-clock-runs-all-game", field: "settler_walk_clock_runs_all_game", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_clock_runs_all_game, disable: AdvancedAi::disable_settler_walk_clock_runs_all_game },
+    // Hotseat `hotseat-20261128T031456Z` seat p2, turns 15-16: Kraków
+    // trained a Warrior onto a centre another Warrior held, the unit pass
+    // gave neither an order, the host refused all 22 holds the bridge tried
+    // and both turns ended by force with two of three soldiers idle. A stack
+    // left by the unit pass keeps one unit and steps the rest beside it.
+    // Opt-in; see `advanced/stacked_soldiers_step_apart.rs`.
+    Gene { tag: "stacked-soldiers-step-apart", field: "stacked_soldiers_step_apart", kind: Kind::OptIn, enable: AdvancedAi::enable_stacked_soldiers_step_apart, disable: AdvancedAi::disable_stacked_soldiers_step_apart },
     // Hotseat `hotseat-20261128T031456Z` seat p3 (Science, Cree, one city):
     // Animal Husbandry, Mining, Pottery, then Sailing at t12, each "the most
     // valuable step toward rocketry"; no Writing, no Campus and five Science
@@ -6803,6 +6810,14 @@ pub const GENES: &[Gene] = &[
     // reviewed Lv 8 games; conquest took 0 cities by t150 in all four. See
     // `advanced/tagma_timing_needs_the_edge.rs`.
     Gene { tag: "tagma-timing-needs-the-edge", field: "tagma_timing_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_tagma_timing_needs_the_edge, disable: AdvancedAi::disable_tagma_timing_needs_the_edge },
+    // Deity Lv 8 benchmark 11-26/27, 8 of 40 reviewed games: 70-90 wounded
+    // spreader-turns a game sat more than 8 tiles from any Holy Site of ours
+    // with an unconverted rival city within one turn's move; the walk home
+    // was a median 12-23 tiles, and 100 trips lost the unit (most within a
+    // turn) against 157 that reached a ring.
+    // A wounded Missionary or Apostle far from home spends its charge at the
+    // nearest target in reach instead. Opt-in; see `advanced/apostle_army.rs`.
+    Gene { tag: "wounded-spreader-spends-far-from-home", field: "wounded_spreader_spends_far_from_home", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_spreader_spends_far_from_home, disable: AdvancedAi::disable_wounded_spreader_spends_far_from_home },
     // T8 benchmark 2026-11-27: with the Gold gene above armed, early cities
     // still fell in 6 of 40 reviewed Lv 8 games: the watch read a 2.9-7.4x
     // neighbour while the treasury held 10-45 of the 70-160 Gold reserved,
