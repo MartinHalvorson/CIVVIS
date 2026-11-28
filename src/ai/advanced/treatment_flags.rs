@@ -421,6 +421,10 @@ impl AdvancedAi {
         /// Darwin with no reachable site buys one Open Borders grant; see
         /// `advanced/foreign_site_open_border.rs`.
         foreign_site_buys_the_open_border => enable_foreign_site_buys_the_open_border, disable_foreign_site_buys_the_open_border;
+        /// Opt-in gene `founding-voyage-2`: a cityless seat's embarked
+        /// Settler sails for land with its escort alongside; see
+        /// `advanced/maori_founds_from_the_sea.rs`.
+        founding_voyage_2 => enable_founding_voyage_2, disable_founding_voyage_2;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

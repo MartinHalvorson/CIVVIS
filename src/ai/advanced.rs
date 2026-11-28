@@ -8004,6 +8004,10 @@ pub struct AdvancedAi {
     /// nearest major holding one. See `advanced/foreign_site_open_border.rs`.
     /// Off by default.
     foreign_site_buys_the_open_border: bool,
+    /// `founding-voyage-2`: version one's voyage, and the soldier at sea
+    /// beside the Settler sails with it. See
+    /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
+    founding_voyage_2: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
