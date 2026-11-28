@@ -57,11 +57,17 @@
 -- A STALL IS NEVER HIDDEN FOR GOOD. The HUD's seat watch
 -- (CivvisControlHeartbeat.lua) keeps running under the cover and ends a quiet
 -- CIVVIS turn by itself. If a CIVVIS seat's controller stays quiet for
--- `HotseatCoverQuietSeconds` (90) anyway, or no seat's turn is active for
--- `HotseatCoverBetweenSeconds` (180), or the person's turn waits paused for
--- `HotseatCoverPersonSeconds` (10), the cover stands aside for the rest of
--- that turn (`hotseat_cover`, a `yield_*` reason) and the harness's screen
--- rescue sees the game again. A quit request (Cmd-Q, or the harness closing
+-- `HotseatCoverQuietSeconds` (90) anyway, or one CIVVIS seat's turn runs for
+-- `HotseatCoverLongSeconds` (240) however busy its controller looks, or no
+-- seat's turn is active for `HotseatCoverBetweenSeconds` (180), or the
+-- person's turn waits paused for `HotseatCoverPersonSeconds` (10), the cover
+-- stands aside for the rest of that turn (`hotseat_cover`, a `yield_*` reason)
+-- and the harness's screen rescue sees the game again. (The long clock: a
+-- controller past its forfeit ladder still stamps its pass every second on
+-- the HUD pulse, so `quiet` never grows on a wedged turn that beats,
+-- e.g. selfplay-duel-20261127T0654Z-p1 turn 36, nine wakes in 20 s of a
+-- 30-tick stall; the seat watch forces such a turn at 180 s, #6007, and 240 s
+-- leaves it that and two retries.) A quit request (Cmd-Q, or the harness closing
 -- the game) lifts it too, so the shipped confirmation is on screen.
 --
 -- IT IS QUIET (`HotseatCoverSound`). The cover hides pixels; a CIVVIS seat's
@@ -197,6 +203,7 @@ CivvisHotseatCover = {
 	yielded = nil,     -- the seat:turn the cover stood aside for
 	key = nil,         -- the seat:turn the clocks below are counting
 	quiet = 0, lastBeat = nil, between = 0, personWait = 0, pausedFor = 0,
+	turnFor = 0,       -- how long the CIVVIS seat's turn now active has run
 	textAt = 0,
 	views = {},        -- person seat -> { x, y, zoom } at the end of their turn
 	muted = nil,       -- sound bus -> the person's volume, while we hold it at 0
@@ -355,6 +362,7 @@ end
 function CivvisHotseatCover.reset(key)
 	local c = CivvisHotseatCover;
 	c.key, c.quiet, c.lastBeat, c.between, c.personWait, c.pausedFor = key, 0, nil, 0, 0, 0;
+	c.turnFor = 0;
 end
 
 -- Up. `force` (a turn has just ended) also clears a stand-aside: whatever
@@ -414,6 +422,7 @@ function CivvisHotseatCover.lift(reason, yield)
 	local w = c.endWait(not yield and (reason == "person_start" or reason == "person_turn"));
 	c.report("hotseat_cover", { { "up", false }, { "reason", reason }, { "player", pid },
 		{ "turn", c.turn() }, { "at", c.clock() }, { "quiet", c.quiet }, { "between", c.between },
+		{ "seat_turn", c.turnFor },
 		{ "waited", w and w.elapsed }, { "estimate", w and w.estimate },
 		{ "timed", w and w.timed }, { "seats", w and #w.seen },
 		-- Each seat's turn ("seat:seconds") and the time left the bar gave as
@@ -1113,6 +1122,10 @@ function CivvisHotseatCover.tick(dt)
 	if paused then c.nudge(pid, dt); end
 	if c.quiet >= c.seconds("HotseatCoverQuietSeconds", 90) then
 		c.lift("yield_quiet", true);
+	end
+	c.turnFor = c.turnFor + dt;
+	if c.turnFor >= c.seconds("HotseatCoverLongSeconds", 240) then
+		c.lift("yield_long", true);
 	end
 end
 

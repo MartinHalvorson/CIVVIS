@@ -615,10 +615,15 @@ closed under the cover like the rest. ⚠ Tests only so far
 (`hotseat_cover_queue_test.lua` 2b). The cover's own clock is the backstop: a seat's
 hand-over pause still standing 1.5 s in is pressed by event
 (`LuaEvents.CivvisHotseatStartTurn`), which reaches a hidden context. A seat
-quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
-10 s makes the cover stand aside for that turn (`hotseat_cover`, reason
-`yield_*`), and the harness's screen rescue, which does not read the screen
-while the cover is up, sees the game again.
+quiet for 90 s, a CIVVIS seat's turn standing 240 s however its controller
+beats (`HotseatCoverLongSeconds`, `yield_long`: a controller past its forfeit
+ladder still stamps every pass, so `quiet` never grows on that wedge; the seat
+watch below forces such a turn at 180 s and two retries fit before 240), 180 s
+with no seat active, or the person's own turn waiting 10 s makes the cover
+stand aside for that turn (`hotseat_cover`, reason `yield_*`, the lift record's
+`seat_turn` the seconds that turn had stood), and the harness's screen rescue,
+which does not read the screen while the cover is up, sees the game again.
+600 CIVVIS seat turns on this Mac took 0.5-36 s. ⚠ `yield_long` is tests only.
 
 **A seat's defeat on a CIVVIS turn keeps the cover.** Hotseat shows any human
 seat's defeat to whoever's turn it is (EndGameMenu.lua:1012-1013), and the
