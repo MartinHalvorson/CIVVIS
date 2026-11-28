@@ -6422,26 +6422,51 @@ fn decide(
             }
         }
     }
-    // `own-price-answers-the-deal`: every deal waiting for this seat at a
-    // hotseat table, answered by its own price. See `hotseat_deals`.
-    if ai.own_price_answers_the_deal_enabled() {
-        let (answers, notes) = hotseat_deals::answer_orders(state, ai.victory_target());
-        orders.extend(answers);
-        note_bits.extend(notes);
+    // At a hotseat table (a board with `deals`) no EQUALIZE `sell`/`buy` ask
+    // goes to a human seat: the mod refuses each one unsent. See
+    // `hotseat_deals::drop_human_seat_asks`.
+    let human_seat_asks = hotseat_deals::drop_human_seat_asks(state, &mut orders);
+    if human_seat_asks > 0 {
+        note_bits.push(format!("human_seat_asks_dropped={human_seat_asks}"));
     }
-    // `own-price-proposes-the-deal`: no session a hotseat human cannot
-    // answer, and this turn's one proposal by the seat's own price. See
-    // `hotseat_deals`.
-    if ai.own_price_proposes_the_deal_enabled() {
+    let answers_deals = ai.own_price_answers_the_deal_enabled();
+    let proposes_deals = ai.own_price_proposes_the_deal_enabled();
+    // Either deal gene: no session a hotseat human cannot answer
+    // (friendship, delegation, embassy, alliance). See `hotseat_deals`.
+    if answers_deals || proposes_deals {
         let held = hotseat_deals::hold_human_sessions(state, &mut orders);
         if held > 0 {
             note_bits.push(format!("own_price_human_sessions_held={held}"));
         }
+    }
+    let mut deal_orders = Vec::new();
+    // `own-price-answers-the-deal`: every deal waiting for this seat at a
+    // hotseat table, answered by its own price. See `hotseat_deals`.
+    if answers_deals {
+        let (answers, notes) = hotseat_deals::answer_orders(state, ai.victory_target());
+        deal_orders.extend(answers);
+        note_bits.extend(notes);
+    }
+    // `own-price-proposes-the-deal`: this turn's one proposal by the seat's
+    // own price. See `hotseat_deals`.
+    if proposes_deals {
         if let Some((order, note)) = hotseat_deals::propose_order(state, ai.victory_target()) {
-            orders.push(order);
+            deal_orders.push(order);
             note_bits.push(note);
         }
     }
+    // The strike list above ran before these were planned: a deal order the
+    // host keeps refusing is held back here the same way.
+    let deals_withheld =
+        hotseat_deals::withheld_deal_orders(&mut deal_orders, host_order_refusals, state.turn);
+    if !deals_withheld.is_empty() {
+        note_bits.push(format!(
+            "own_price_deal_withheld={} [{}]",
+            deals_withheld.len(),
+            deals_withheld.join("; ")
+        ));
+    }
+    orders.extend(deal_orders);
     let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
     if session_conflicts > 0 {
         note_bits.push(format!(
@@ -8155,6 +8180,11 @@ const EVIDENCE_KINDS: &[&str] = &[
     // does not propose the identical pair again.
     "range_attack_refused",
     "war_refused",
+    // A hotseat `deal` order refused as it was applied, or sent from its
+    // session and failed: the mod's reason fails the order by name
+    // (`hotseat_deals::verify`).
+    "deal_refused",
+    "deal_answer",
 ];
 
 /// Ledger evidence and state frames stamped with one of `turns`.

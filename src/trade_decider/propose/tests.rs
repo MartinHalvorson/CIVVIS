@@ -77,7 +77,7 @@ fn the_ottomans_ask_canada_for_its_furs_with_what_they_can_pay_and_canada_takes_
     // Gold to the Ottomans. Canada, a CIVVIS seat, offers Furs; the person
     // offers Silver and Sugar for as much, but a seat is asked first.
     let seat = ottoman();
-    let proposal = propose(&seat, &rivals(OTTOMAN_T32), &ottoman_table(), &none())
+    let proposal = propose(&seat, &rivals(OTTOMAN_T32), &ottoman_table(), &none(), true)
         .expect("a deal worth proposing");
     assert_eq!(proposal.to, 3);
     assert_eq!(
@@ -127,13 +127,14 @@ fn the_person_is_asked_when_no_seat_offers_as_much_and_never_twice_with_the_same
     let seat = ottoman();
     let people = table(&[(0, "person"), (2, "civvis")]);
     let first =
-        propose(&seat, &rivals(OTTOMAN_T32), &people, &none()).expect("the person's Silver");
+        propose(&seat, &rivals(OTTOMAN_T32), &people, &none(), true).expect("the person's Silver");
     assert_eq!(first.to, 0);
     assert!(first.gain >= PERSON_MIN_GAIN);
     // Refused: the same terms are never sent again; the other luxury is.
     let mut refused = people.clone();
     refused.refused_by_person.push((7, 20, first.terms.clone()));
-    let second = propose(&seat, &rivals(OTTOMAN_T32), &refused, &none()).expect("Sugar instead");
+    let second =
+        propose(&seat, &rivals(OTTOMAN_T32), &refused, &none(), true).expect("Sugar instead");
     assert_eq!(second.to, 0);
     assert_ne!(second.terms.key(), first.terms.key());
     // Asked seven turns ago: the person is left alone for ten.
@@ -145,7 +146,70 @@ fn the_person_is_asked_when_no_seat_offers_as_much_and_never_twice_with_the_same
         outcome: "rejected".to_string(),
         terms: first.terms.clone(),
     });
-    assert_eq!(propose(&seat, &rivals(OTTOMAN_T32), &asked, &none()), None);
+    assert_eq!(
+        propose(&seat, &rivals(OTTOMAN_T32), &asked, &none(), true),
+        None
+    );
+}
+
+#[test]
+fn outside_its_window_a_seat_does_not_ask_the_person_but_still_asks_a_seat() {
+    let seat = ottoman();
+    // The person alone: nothing is proposed outside the window.
+    let people = table(&[(0, "person")]);
+    assert_eq!(
+        propose(&seat, &rivals(OTTOMAN_T32), &people, &none(), true).map(|p| p.to),
+        Some(0)
+    );
+    assert_eq!(
+        propose(&seat, &rivals(OTTOMAN_T32), &people, &none(), false),
+        None
+    );
+    // A CIVVIS seat is asked whatever the window says.
+    let both = ottoman_table();
+    let with_window = propose(&seat, &rivals(OTTOMAN_T32), &both, &none(), true);
+    let without = propose(&seat, &rivals(OTTOMAN_T32), &both, &none(), false);
+    assert!(without.is_some());
+    assert_ne!(without.as_ref().map(|p| p.to), Some(0));
+    assert_eq!(with_window.map(|p| p.to), without.map(|p| p.to));
+}
+
+#[test]
+fn the_table_takes_turns_asking_the_person() {
+    // Six players, CIVVIS in seats 1 to 5, over a whole game: each turn at
+    // most one seat holds the window, and a seat's windows come one rotation
+    // apart, past the per-seat gap.
+    let mut last_open: BTreeMap<i64, i64> = BTreeMap::new();
+    for turn in 0..250 {
+        let open: Vec<i64> = (1..6)
+            .filter(|seat| person_slot_open(*seat, 6, turn))
+            .collect();
+        assert!(open.len() <= 1, "turn {turn}: {open:?}");
+        for seat in open {
+            if let Some(last) = last_open.insert(seat, turn) {
+                let gap = turn - last;
+                assert!(
+                    gap == 1 || gap >= PERSON_PROPOSE_GAP_TURNS,
+                    "seat {seat}: windows {last} and {turn}"
+                );
+            }
+        }
+    }
+    // Every seat gets its window, within one rotation.
+    for seat in 1..6 {
+        assert!(
+            (0..18).any(|turn| person_slot_open(seat, 6, turn)),
+            "{seat}"
+        );
+    }
+    // Windows of three turns: seat 1 holds turns 3-5, seat 2 turns 6-8.
+    assert!((3..6).all(|turn| person_slot_open(1, 6, turn)));
+    assert!(!person_slot_open(1, 6, 6) && person_slot_open(2, 6, 6));
+    // A two-player table rotates over two windows; the player count read as
+    // nothing falls back to six seats; an unknown seat never asks.
+    assert!(person_slot_open(1, 2, 3) && !person_slot_open(1, 2, 6));
+    assert!(person_slot_open(1, 0, 3) && !person_slot_open(1, 0, 9));
+    assert!(!person_slot_open(-1, 6, 3));
 }
 
 #[test]
@@ -178,14 +242,14 @@ fn a_seat_with_a_deal_pending_either_way_or_inside_the_cooldown_is_not_asked() {
         terms: Terms::default(),
     });
     for board in [incoming, outgoing, cooling] {
-        let proposal = propose(&seat, &rivals(OTTOMAN_T32), &board, &none());
+        let proposal = propose(&seat, &rivals(OTTOMAN_T32), &board, &none(), true);
         assert_ne!(proposal.as_ref().map(|p| p.to), Some(3), "{proposal:?}");
     }
     // A seat that is not a hotseat human (a Firaxis leader) is the sell/buy
     // lane's, never this one's.
     let leaders = table(&[(0, "ai"), (2, "ai"), (3, "ai")]);
     assert_eq!(
-        propose(&seat, &rivals(OTTOMAN_T32), &leaders, &none()),
+        propose(&seat, &rivals(OTTOMAN_T32), &leaders, &none(), true),
         None
     );
 }
@@ -230,6 +294,7 @@ fn canada_sells_its_spare_horses_and_the_two_seats_settle_by_counter() {
         &rivals(CANADA_T32),
         &table(&[(0, "person"), (1, "civvis")]),
         &none(),
+        true,
     )
     .expect("the spare Horses");
     assert_eq!(proposal.to, 1);

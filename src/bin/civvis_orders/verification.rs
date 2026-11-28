@@ -435,6 +435,9 @@ fn verify_order_with_context(
                 failed("target_unharmed".to_string())
             }
         }
+        // A hotseat `deal` order: the next turn's `deals` board says whether
+        // it landed. See `hotseat_deals::verify`.
+        "deal" => hotseat_deals::verify(order, turn, after, evidence),
         _ => Verdict::Unverifiable,
     }
 }
