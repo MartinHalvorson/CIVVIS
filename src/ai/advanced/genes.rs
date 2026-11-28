@@ -6088,6 +6088,13 @@ pub const GENES: &[Gene] = &[
     // held one with no reachable site buys one grant. Opt-in; see
     // `advanced/foreign_site_open_border.rs`.
     Gene { tag: "foreign-site-buys-the-open-border", field: "foreign_site_buys_the_open_border", kind: Kind::OptIn, enable: AdvancedAi::enable_foreign_site_buys_the_open_border, disable: AdvancedAi::disable_foreign_site_buys_the_open_border },
+    // Hotseat live-6p-20261128T0446Zd seat p1 (Kupe, 2026-11-28): with
+    // `founding-voyage` armed nowhere, the embarked Settler and Warrior stood
+    // on ocean turns 1-6 and the seat never founded. Replayed, version one
+    // sails the Settler four plots east every turn and leaves the Warrior
+    // behind. Version two sails the soldier at sea beside it too. Opt-in;
+    // see `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage-2", field: "founding_voyage_2", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage_2, disable: AdvancedAi::disable_founding_voyage_2 },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
