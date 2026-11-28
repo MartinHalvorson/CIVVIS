@@ -99,6 +99,8 @@ local function load(config)
 			WaitFill = { SetSizeX = function(self, x) did.bar.width = x end,
 			             SetOffsetX = function(self, x) did.bar.offset = x end },
 			WaitText = { SetText = function(self, text) did.bar.text = text end },
+			Note = { SetText = function(self, text) did.note = text end,
+			         SetHide = function(self, hide) did.noteHidden = hide end },
 		},
 		Mouse = { eLClick = 1 },
 		KeyEvents = { KeyDown = 1, KeyUp = 2 },
@@ -1343,6 +1345,47 @@ do
 	world3.turn, world3.pid, world3.active[0], world3.paused[0] = 2, 0, true, false
 	handlers3.LocalPlayerTurnBegin()
 	assert(world3.crisisQueued and did3.dropped == 0, "the person saw that turn; it is as it ships")
+end
+
+-- The person is told what a CIVVIS seat did with their deal: the seat's agent
+-- writes `ExposedMembers.CivvisDealNotes` (CivvisControlAgent.lua
+-- `CivvisTrade.seatNote`), the cover shows the newest one for the person.
+do
+	local cover, world, did, handlers, env = load(HOTSEAT())
+	world.active[0] = true
+	handlers.LocalPlayerTurnEnd()
+	world.active[0] = false
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up)
+	env.ExposedMembers.CivvisDealNotes = { n = 3,
+		{ n = 1, seat = 1, to = 0, verb = "REJECT", turn = 4 },
+		{ n = 2, seat = 1, to = 0, verb = "SHRUG", turn = 4 },    -- no words for it
+		{ n = 3, seat = 1, to = 2, verb = "ACCEPT", turn = 4 } }  -- to another seat
+	ticks(handlers, 1)
+	assert(did.note == "CIVVIS jack 1 turned down your deal.", tostring(did.note))
+	assert(did.noteHidden == false)
+	local said = kinds(did, "hotseat_cover_deal_note")
+	assert(#said == 1 and said[1]:find('"seat":1,"to":0,"verb":"REJECT"', 1, true), said[1])
+	ticks(handlers, 3)
+	assert(#kinds(did, "hotseat_cover_deal_note") == 1, "said once")
+	-- A newer answer takes its place.
+	table.insert(env.ExposedMembers.CivvisDealNotes, { n = 4, seat = 2, to = 0, verb = "ACCEPT", turn = 4 })
+	ticks(handlers, 1)
+	assert(did.note == "CIVVIS jack 2 accepted your deal.", tostring(did.note))
+	-- Read through their turn; gone once it ends.
+	world.pid, world.active[1], world.active[0] = 0, false, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+	assert(did.note == "CIVVIS jack 2 accepted your deal.", "still there as their turn starts")
+	handlers.LocalPlayerTurnEnd()
+	assert(did.note == "" and did.noteHidden == true, "cleared when their turn ends")
+	-- No notes at all: nothing.
+	local cover2, world2, did2, handlers2 = load(HOTSEAT())
+	world2.active[0] = true
+	handlers2.LocalPlayerTurnEnd()
+	ticks(handlers2, 2)
+	assert(did2.note == nil and #kinds(did2, "hotseat_cover_deal_note") == 0)
 end
 
 print("hotseat_cover_test: ok")

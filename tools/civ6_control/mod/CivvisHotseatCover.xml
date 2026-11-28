@@ -17,6 +17,7 @@
 	<Stack ID="Lines" Anchor="C,C" StackGrowth="Bottom" StackPadding="14">
 		<Label ID="Headline" Anchor="C,T" Style="FontFlair26" FontStyle="Shadow" String="CIVVIS is taking its turn"/>
 		<Label ID="Detail" Anchor="C,T" Style="FontNormal18" FontStyle="Shadow" String=""/>
+		<Label ID="Note" Anchor="C,T" Style="FontNormal16" FontStyle="Shadow" Color="214,190,128,255" String="" Hidden="1"/>
 		<Container ID="Wait" Anchor="C,T" Size="320,34" Hidden="1">
 			<Box ID="WaitTrack" Anchor="L,T" Offset="0,6" Size="320,6" Color="255,255,255,40"/>
 			<Box ID="WaitFill" Anchor="L,T" Offset="0,6" Size="1,6" Color="214,190,128,255"/>
