@@ -195,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-monuments` | off (unmeasured) | Opt-in gene `science-seat-monuments`: a Science seat's cities claim their Monument from the third city; see `advanced/culture_monuments.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
 | `settler-walk-clock-runs-all-game` | off (unmeasured) | Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn out counts on the Settler walk clock, and the walk deadline holds past the band turn; see `advanced/settler_walk_deadline.rs`. | 1 \| 1 |
+| `spreaders-spread-before-they-chart-2` | off (unmeasured) | Opt-in gene `spreaders-spread-before-they-chart-2`: version one, and the corps' searchers share one budget; see `advanced/spreaders_spread_before_they_chart.rs`. | 1 \| 2 |
 | `stacked-shooter-steps-out` | off (unmeasured) | Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps one shooter and steps our other soldiers beside it, so the shooters can fire; see `advanced/stacked_shooter_steps_out.rs`. | 1 \| 1 |
 | `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
 | `walls-for-the-war-front` | off (unmeasured) | Opt-in gene `walls-for-the-war-front`; see `advanced/walls_for_the_war_front.rs`. | 1 \| 1 |

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import people_elo  # noqa: E402
@@ -91,6 +92,42 @@ class Row(unittest.TestCase):
         self.assertEqual((row["winner"], row["victory"], row["turn"]),
                          (people_elo.PERSON, "VICTORY_CONQUEST", 90))
 
+    def test_the_person_eliminated_while_civvis_plays_on_is_their_loss(self):
+        # `civ6_hotseat.Monitor.on_defeat`'s result for the person's seat.
+        table = summary(players=6, civvis_seats=[1, 2, 3, 4, 5],
+                        seat_agents={"1": "holy", "2": "tourist", "3": "moonshot", "4": "siege", "5": "jack"})
+        gone = {"kind": "eliminated", "player": 0, "turn": 88, "ours": True, "winner_seat": 3, "by": 3,
+                "defeat_type": "DEFEAT_DEFAULT", "at": "2026-11-28T07:13:20Z"}
+        row = people_elo.game_row({**table, "result": gone})
+        self.assertEqual((row["winner"], row["victory"], row["turn"], row["ended"]),
+                         ("moonshot", people_elo.ELIMINATION, 88, "2026-11-28T07:13:20Z"))
+        self.assertIn("dev lost to moonshot  (elimination, turn 88", people_elo.said(row))
+        # Nobody named (no city event), or a taker that is not a CIVVIS seat:
+        # to the table; at a duel, to its one agent.
+        for unnamed in ({**gone, "ours": False, "winner_seat": None, "by": None},
+                        {**gone, "ours": False, "winner_seat": None, "by": 9}):
+            self.assertEqual(people_elo.game_row({**table, "result": unnamed})["winner"], people_elo.CIVVIS)
+            self.assertEqual(people_elo.game_row(summary(result=unnamed))["winner"], "holy")
+        # Not the person's win, as `defeat` (every CIVVIS seat gone) is.
+        self.assertNotEqual(people_elo.game_row({**table, "result": gone})["winner"], people_elo.PERSON)
+
+    def test_a_game_nobody_won_or_won_by_a_stranger_is_not_guessed(self):
+        timed = summary(result={"kind": "time", "turn": 250, "ours": False, "at": "2026-11-28T09:00:00Z"})
+        with self.assertRaisesRegex(people_elo.NotRecorded, "nobody won it"):
+            people_elo.game_row(timed)
+        # The table's record named the winning players, and they are neither
+        # the person nor a CIVVIS seat (a Firaxis AI at a table set up by hand).
+        stranger = summary(result={"kind": "victory", "team": 7, "victory": 5, "victory_type": "VICTORY_TECHNOLOGY",
+                                   "turn": 201, "ours": False, "winner_seat": None, "members": [7],
+                                   "person": False})
+        with self.assertRaisesRegex(people_elo.NotRecorded, r"team 7 won \(players \[7\]\).*--winner"):
+            people_elo.game_row(stranger)
+        # Said by someone: recorded as said.
+        self.assertEqual(people_elo.game_row(stranger, winner="civvis")["winner"], "holy")
+        # The person's own, named by the table.
+        mine = summary(result={**stranger["result"], "team": 0, "members": [0], "person": True})
+        self.assertEqual(people_elo.game_row(mine)["winner"], people_elo.PERSON)
+
     def test_the_agent_that_won_is_named_at_a_table_of_several(self):
         table = summary(players=4, civvis_seats=[1, 2, 3], seat_agents={"1": "holy", "3": "tourist"},
                         result={"kind": "victory", "team": 3, "victory": 2, "turn": 180,
@@ -142,6 +179,49 @@ class Row(unittest.TestCase):
         self.assertEqual(first["ended"], "2026-11-27T08:55:00Z")
         self.assertEqual(people_elo.game_row(summary())["ended"], "2026-11-27T09:00:00Z")
 
+    #: The `genome` a person's run summary carries (`civ6_hotseat.live_genome`,
+    #: #6008), as the live checks of 2026-11-28 armed it (genome.json of
+    #: live-6p-20261128T0446Zd: 285 listed, 210 forced, none dropped); three of
+    #: its 210 forced names here.
+    LIVE = {"genome": "live", "source": "deploy/live-force-on.txt", "listed": 285,
+            "forced": ["age-closer-2", "age-closer-spends-the-reserve", "air-fire-counts-on-the-city"],
+            "dropped": [], "note": ""}
+
+    def test_a_rated_game_says_what_it_was_played_against(self):
+        row = people_elo.game_row(summary(genome=self.LIVE))
+        self.assertEqual(row["genome"], {"genome": "live", "source": "deploy/live-force-on.txt", "listed": 285,
+                                         "forced": 3, "forced_digest": "c57e1c225a34", "dropped": 0})
+        # The digest names the set, not the order it was listed in.
+        shuffled = {**self.LIVE, "forced": list(reversed(self.LIVE["forced"]))}
+        self.assertEqual(people_elo.game_row(summary(genome=shuffled))["genome"], row["genome"])
+        other = {**self.LIVE, "forced": self.LIVE["forced"][:2]}
+        self.assertNotEqual(people_elo.game_row(summary(genome=other))["genome"]["forced_digest"], "c57e1c225a34")
+        # The stock genome, and a list the decider refused part of.
+        stock = {"genome": "stock", "source": "--genome stock", "listed": 0, "forced": [], "dropped": [],
+                 "note": ""}
+        self.assertEqual(people_elo.game_row(summary(genome=stock))["genome"],
+                         {"genome": "stock", "source": "--genome stock", "listed": 0, "forced": 0,
+                          "forced_digest": "e3b0c44298fc", "dropped": 0})
+        refused = {**self.LIVE, "dropped": ["no-such-gene"], "note": "the decider refused the list (x)"}
+        self.assertEqual({k: people_elo.game_row(summary(genome=refused))["genome"][k] for k in ("dropped", "note")},
+                         {"dropped": 1, "note": "the decider refused the list (x)"})
+        # A run that did not say (before #6008, or a summary with no genome)
+        # makes the line it always made: no `genome` key at all.
+        for said in (None, {}, "live"):
+            self.assertNotIn("genome", people_elo.game_row(summary(genome=said)))
+
+    def test_the_page_reads_a_line_with_a_genome_as_one_without(self):
+        sys.path.insert(0, str(people_elo.REPO / "beta"))
+        import elo_page  # noqa: PLC0415 - the site's own reader
+
+        old = people_elo.game_row(summary())
+        new = people_elo.game_row(summary(tag="duel-dev-2", genome=self.LIVE))
+        games = elo_page.people_games(people_elo.REPO, people_elo.rows_text({old["tag"]: old, new["tag"]: new}))
+        self.assertEqual(len(games), 2)
+        self.assertEqual([{k: v for k, v in game.items() if k != "tag"} for game in games][0],
+                         [{k: v for k, v in game.items() if k != "tag"} for game in games][1])
+        self.assertEqual([game["tag"] for game in games], ["duel-dev-1", "duel-dev-2"])
+
     def test_the_diplomatic_switch_is_the_tables_own(self):
         self.assertIs(people_elo.game_row(summary(victories_off=["VICTORY_DIPLOMATIC"]))["diplomatic"], False)
         self.assertIsNone(people_elo.game_row(summary(victories_off=None))["diplomatic"])
@@ -174,6 +254,33 @@ class Ledger(unittest.TestCase):
         rows = people_elo.parse_rows(branch.text)
         self.assertEqual((len(rows), rows["duel-dev-1"]["winner"]), (2, "person"))
 
+    def test_a_resumed_game_is_one_game_and_its_first_ending_stands(self):
+        # hotseat-20261128T031456Z resumed in a later run: a new tag, the first
+        # run's start (`civ6_hotseat.py --resume` keeps `started`).
+        branch = Branch()
+        first = people_elo.game_row(summary(tag="hotseat-20261128T031456Z", started="2026-11-28T03:14:56Z"))
+        self.assertEqual(people_elo.publish(first, repo=self.REPO, api=branch), "published")
+        # A save from before that ending, played to another one.
+        again = people_elo.game_row(summary(tag="hotseat-20261129T200000Z", started="2026-11-28T03:14:56Z"),
+                                    winner="person")
+        self.assertEqual(people_elo.publish(again, repo=self.REPO, api=branch),
+                         "already, as hotseat-20261128T031456Z")
+        self.assertEqual(len(branch.commits), 1, "nothing is written")
+        self.assertEqual(people_elo.parse_rows(branch.text), {first["tag"]: first})
+        # The same run recorded again still corrects its own line.
+        fixed = people_elo.game_row(summary(tag="hotseat-20261128T031456Z", started="2026-11-28T03:14:56Z"),
+                                    winner="person")
+        self.assertEqual(people_elo.publish(fixed, repo=self.REPO, api=branch), "published")
+        # Another game (begun at another moment), or another person's, is its own line.
+        for other in (summary(tag="hotseat-20261130T010000Z", started="2026-11-30T01:00:00Z"),
+                      summary(tag="hotseat-20261130T020000Z", started="2026-11-28T03:14:56Z", person="ada")):
+            self.assertEqual(people_elo.publish(people_elo.game_row(other), repo=self.REPO, api=branch),
+                             "published")
+        # A line that does not say when its game began is matched by tag only.
+        undated = people_elo.game_row(summary(tag="hotseat-x", started=None, utc=None, result=None),
+                                      winner="person")
+        self.assertIsNone(people_elo.same_game({"t": {"person": "dev", "at": None}}, undated))
+
     def test_a_write_that_lost_a_race_is_read_again_and_redone_and_gives_up_out_loud(self):
         row = people_elo.game_row(summary())
         branch = Branch("", lose_races=1)
@@ -205,6 +312,17 @@ class Command(unittest.TestCase):
             with contextlib.redirect_stderr(err):
                 self.assertEqual(people_elo.main(["record", str(run_dir), "--dry-run"]), 2)
             self.assertIn("--winner person or --winner civvis", err.getvalue())
+
+    def test_a_game_kept_under_another_tag_says_so(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "summary.json").write_text(json.dumps(summary(tag="resumed")))
+            out = io.StringIO()
+            with patch.object(people_elo, "publish", return_value="already, as duel-dev-1"), \
+                    patch.object(people_elo, "branch_record", return_value=("", None)), \
+                    contextlib.redirect_stdout(out):
+                self.assertEqual(people_elo.main(["record", str(run_dir)]), 0)
+            self.assertIn("people_elo: already, as duel-dev-1 (the game's first ending stands): ", out.getvalue())
 
     def test_a_game_reads_as_a_sentence_and_the_rating_is_the_pages_own_fit(self):
         won = people_elo.game_row(summary(result={"kind": "defeat", "turn": 90, "ours": False}))
