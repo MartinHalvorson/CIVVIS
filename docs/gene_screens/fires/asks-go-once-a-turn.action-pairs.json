@@ -1,0 +1,19 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "asks-go-once-a-turn",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 8 turns of the person-played hotseat game hotseat-20261128T031456Z (2026-11-27): each seat's events.jsonl fed to the live decider's own mode, civvis_orders --serve --fresh-board, one recorded frame at a time (each turn has two frames), so the frame-to-frame memory is exercised as it is live. Both arms run one frozen macOS arm64 decider that the hotseat-bundle workflow built (run 46114084783) from probe commit 02135286: main 16a8bb23 with the src/ of this branch at 57d23674 merged with #6029's (main changed no Rust after 16a8bb23), with the seat's own victory target and civilization and no forced genes (the game's brains ran forced=none); the on arm adds --with asks-go-once-a-turn. 8 of 8 complete. Changed (the replan frame's repeat dropped, the reply notes asks_sent_this_turn): turn 16 p2's delegation to seat 5, p4's to seat 0, p5's to seat 2; turn 15 p2's Great Work purchase from seat 5. Unchanged: p3 turn 12 (the replayed decider did not repeat the Trader route in frame 1, so there was nothing to drop), and the controls p1 t16, p3 t14, p2 t13 (no repeated ask).",
+ "archive": {
+  "path": "docs/eval/2026-11-28-asks-go-once-a-turn.native-queries.tar.xz",
+  "sha256": "eebf4357df7ba8771b085041b392d6220de161e772455c8a660e7578c0703066"
+ },
+ "members": [
+  "asks-go-once-a-turn-queries/0000/result.json",
+  "asks-go-once-a-turn-queries/0001/result.json",
+  "asks-go-once-a-turn-queries/0002/result.json",
+  "asks-go-once-a-turn-queries/0003/result.json",
+  "asks-go-once-a-turn-queries/0004/result.json",
+  "asks-go-once-a-turn-queries/0005/result.json",
+  "asks-go-once-a-turn-queries/0006/result.json",
+  "asks-go-once-a-turn-queries/0007/result.json"
+ ]
+}
