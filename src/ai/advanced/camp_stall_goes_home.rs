@@ -37,9 +37,18 @@
 //!    match, so the board hands its soldiers to the other rows by the usual
 //!    allocation. A Decision line names the camp, the stalled turns and the
 //!    turn it reopens.
-//! 3. **Reopen.** From `T + 10` the row is raised again with a clean record:
+//! 3. **Go home.** The soldiers of that party walk to the anchor of the
+//!    force the board now puts them in (the Reserve at home, an Escort's
+//!    civilian) and hold there for as long as the row is closed, unless an
+//!    enemy soldier other than a closed camp's guard stands within
+//!    [`CAMP_STALL_HOME_WATCH`] of one, which the per-unit ladder then
+//!    answers as before. A board that has only reassigned them is not
+//!    enough: on the recorded p4 board the ladder's barbarian response,
+//!    which counts the camp and its guard as threats at home, walked the
+//!    released Warriors back beside the camp on the next turn.
+//! 4. **Reopen.** From `T + 10` the row is raised again with a clean record:
 //!    three new stalled turns are needed to close it again.
-//! 4. **The site.** While a row stands closed, `settle_value_visible` takes
+//! 5. **The site.** While a row stands closed, `settle_value_visible` takes
 //!    [`CAMP_STALL_SITE_PENALTY`] off every site within three tiles of that
 //!    camp. A camp the army is still clearing is left to the existing camp
 //!    terms (`settlement_tile_risk_with_support`, `defensibility`), because it
@@ -70,6 +79,11 @@ pub(crate) const CAMP_STALL_SITE_TILES: i32 = 3;
 /// p4 site at (38, 20) was worth, enough for a site four tiles out to win.
 pub(crate) const CAMP_STALL_SITE_PENALTY: f64 = 40.0;
 
+/// How near a released soldier another enemy soldier (one not standing on a
+/// closed camp) must be for the per-unit ladder to keep it: then it is a
+/// fight to answer, not the camp the party gave up on.
+pub(crate) const CAMP_STALL_HOME_WATCH: i32 = 3;
+
 /// One camp's record.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CampStall {
@@ -81,6 +95,8 @@ pub(crate) struct CampStall {
     pub(crate) struck: BTreeSet<u32>,
     /// The turn the closed row is raised again.
     pub(crate) closed_until: Option<u32>,
+    /// The party the close released: walked home while the row is closed.
+    pub(crate) released: BTreeSet<u32>,
 }
 
 impl AdvancedAi {
@@ -184,6 +200,14 @@ impl AdvancedAi {
         stall.closed_until = Some(until);
         stall.contact.clear();
         stall.struck.clear();
+        // Last turn's party, read before the board matches forces to rows.
+        stall.released = self
+            .objective_board_state
+            .forces
+            .iter()
+            .filter(|force| force.objective_key == ObjectiveKey::Camp(camp))
+            .flat_map(|force| force.units.iter().copied())
+            .collect();
         let last = turn - 1;
         think!(self.journal(), Military, Decision,
             "The party at the camp at {camp:?} goes home";
@@ -192,6 +216,72 @@ impl AdvancedAi {
              other rows, and sites within {CAMP_STALL_SITE_TILES} tiles of the camp lose \
              {CAMP_STALL_SITE_PENALTY:.0}");
         true
+    }
+
+    /// The go-home step, early in the per-unit ladder: a soldier a close
+    /// released walks to its force's anchor and holds there while the row is
+    /// closed and no enemy soldier but a closed camp's own stands within
+    /// [`CAMP_STALL_HOME_WATCH`] of it. Without it the ladder's barbarian
+    /// response (`BasicAi::barbarian_response_objective`, which counts a
+    /// camp within nine of a city and its guard within six as threats at
+    /// home) walks the party straight back to the camp. `None` with the gene
+    /// off, for any other unit, or with another enemy near.
+    pub(super) fn camp_stall_home_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !self.camp_stall_goes_home {
+            return None;
+        }
+        let turn = g.turn;
+        let open = |stall: &CampStall| stall.closed_until.is_some_and(|until| turn < until);
+        let (camp, _) = self
+            .camp_stalls
+            .iter()
+            .find(|(_, stall)| open(stall) && stall.released.contains(&uid))?;
+        let camp = *camp;
+        let closed: Vec<Pos> = self
+            .camp_stalls
+            .iter()
+            .filter(|(_, stall)| open(stall))
+            .map(|(camp, _)| *camp)
+            .collect();
+        let unit = g.units.get(&uid).filter(|unit| unit.owner == pid)?;
+        if unit.moves_left <= 0.0 || g.is_embarked(unit) {
+            return None;
+        }
+        let at = unit.pos;
+        let kind = unit.kind;
+        let fight_near = g.units.values().any(|other| {
+            other.owner != pid
+                && other.hp > 0
+                && g.rules.units[other.kind].class == "military"
+                && g.is_at_war(pid, other.owner)
+                && g.wdist(other.pos, at) <= CAMP_STALL_HOME_WATCH
+                && !closed.contains(&other.pos)
+        });
+        if fight_near {
+            return None;
+        }
+        let anchor = self
+            .force_groups
+            .iter()
+            .find(|group| group.units.contains(&uid))
+            .map(|group| group.anchor)?;
+        if g.wdist(at, anchor) <= 1 {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        if !self.base.step_toward(g, pid, uid, anchor) {
+            return None;
+        }
+        let now = g.units.get(&uid).map_or(at, |unit| unit.pos);
+        think!(self.journal(), Military, Detail,
+            "The {} walks home from the camp at {camp:?}", crate::reasoning::plain(kind.as_str());
+            "camp-stall-goes-home: its party's row is closed; {at:?} -> {now:?}, for its force's \
+             anchor at {anchor:?}");
+        Some(true)
     }
 
     /// What a settle site at `pos` loses to a camp whose row this gene has

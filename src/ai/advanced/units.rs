@@ -1252,6 +1252,13 @@ impl AdvancedAi {
             self.ordering(OrderStep::Breaker);
             return acted;
         }
+        // `camp-stall-goes-home`: a soldier released from a closed camp's
+        // party walks home while only that camp's guard is near. `None` with
+        // the gene off. See `advanced/camp_stall_goes_home.rs`.
+        if let Some(acted) = self.camp_stall_home_step(g, pid, uid) {
+            self.ordering(OrderStep::Hold);
+            return acted;
+        }
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];

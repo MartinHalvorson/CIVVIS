@@ -4,7 +4,7 @@
 use super::tests::{at, conquest, flat_board, on};
 use super::*;
 use crate::ai::advanced::camp_stall_goes_home::{
-    CAMP_STALL_CLOSE_TURNS, CAMP_STALL_SITE_PENALTY, CAMP_STALL_TURNS,
+    CAMP_STALL_CLOSE_TURNS, CAMP_STALL_HOME_WATCH, CAMP_STALL_SITE_PENALTY, CAMP_STALL_TURNS,
 };
 use crate::ai::Ai;
 use crate::game::Action;
@@ -48,7 +48,12 @@ fn camp_board(gene: bool, guarded: bool, apart: i32) -> (Game, Pos, Vec<u32>, Ad
     let warriors: Vec<u32> = ring
         .iter()
         .take(2)
-        .map(|pos| g.spawn_test_unit("warrior", 0, *pos))
+        .map(|pos| {
+            let uid = g.spawn_test_unit("warrior", 0, *pos);
+            let moves = g.unit_max_moves(uid);
+            g.units.get_mut(&uid).unwrap().moves_left = moves;
+            uid
+        })
         .collect();
     assert_eq!(warriors.len(), 2, "two tiles for the party");
     let mut ai = on();
@@ -292,4 +297,95 @@ fn a_whole_turn_writes_the_camps_record_and_off_writes_nothing() {
             ai.camp_stalls
         );
     }
+}
+
+/// The board on the turn a stall closes the camp's row: the party released
+/// and reassigned, its force groups drawn.
+fn closed_camp_board() -> (Game, Pos, Vec<u32>, AdvancedAi) {
+    let (mut g, camp, warriors, mut ai) = camp_board(true, true, 1);
+    for _ in 0..CAMP_STALL_TURNS {
+        a_turn(&mut g, &mut ai, camp, None);
+    }
+    let plan = conquest(&g, None);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(row(&ai, ObjectiveKey::Camp(camp)).is_none(), "closed");
+    (g, camp, warriors, ai)
+}
+
+fn anchor_of(ai: &AdvancedAi, uid: u32) -> Pos {
+    ai.force_groups
+        .iter()
+        .find(|group| group.units.contains(&uid))
+        .map(|group| group.anchor)
+        .expect("the released soldier is in a force")
+}
+
+#[test]
+fn a_released_warrior_walks_toward_its_new_force_and_holds_there() {
+    let (mut g, camp, warriors, mut ai) = closed_camp_board();
+    for uid in &warriors {
+        let anchor = anchor_of(&ai, *uid);
+        assert!(g.wdist(anchor, camp) > 1, "the new anchor is not the camp");
+        let before = g.wdist(g.units[uid].pos, anchor);
+        assert!(before > 1, "it starts away from its anchor");
+        assert_eq!(ai.camp_stall_home_step(&mut g, 0, *uid), Some(true));
+        let after = g.wdist(g.units[uid].pos, anchor);
+        assert!(
+            after < before,
+            "{uid} walked toward {anchor:?}: {before} -> {after}"
+        );
+    }
+    assert!(gene_lines(&ai)
+        .iter()
+        .any(|line| line.contains("walks home from the camp")));
+    // Turn after turn it reaches its anchor, then holds there rather than
+    // handing itself back to the ladder.
+    let uid = warriors[0];
+    let anchor = anchor_of(&ai, uid);
+    for _ in 0..12 {
+        if g.wdist(g.units[&uid].pos, anchor) <= 1 {
+            break;
+        }
+        let moves = g.unit_max_moves(uid);
+        g.units.get_mut(&uid).unwrap().moves_left = moves;
+        assert_eq!(ai.camp_stall_home_step(&mut g, 0, uid), Some(true));
+    }
+    assert!(g.wdist(g.units[&uid].pos, anchor) <= 1, "it got home");
+    let home = g.units[&uid].pos;
+    let moves = g.unit_max_moves(uid);
+    g.units.get_mut(&uid).unwrap().moves_left = moves;
+    assert!(ai.camp_stall_home_step(&mut g, 0, uid).is_some());
+    assert_eq!(g.units[&uid].pos, home, "it stays home");
+}
+
+#[test]
+fn another_enemy_near_or_a_soldier_never_in_the_party_is_the_ladders() {
+    let (mut g, camp, warriors, mut ai) = closed_camp_board();
+    // A soldier of ours the party never held.
+    let stranger = g.spawn_test_unit("warrior", 0, at(8, 9));
+    let moves = g.unit_max_moves(stranger);
+    g.units.get_mut(&stranger).unwrap().moves_left = moves;
+    assert_eq!(ai.camp_stall_home_step(&mut g, 0, stranger), None);
+    // A raider off the camp within reach of a released Warrior: a fight.
+    let uid = warriors[0];
+    let at_now = g.units[&uid].pos;
+    let raider_at = g
+        .wdisk(at_now, CAMP_STALL_HOME_WATCH)
+        .into_iter()
+        .find(|pos| {
+            *pos != camp
+                && g.wdist(*pos, at_now) == 2
+                && g.unit_ids_at(*pos).is_empty()
+                && g.city_at(*pos).is_none()
+        })
+        .expect("a tile two from the Warrior");
+    let barb = g.barb_pid.expect("barbarians");
+    g.spawn_test_unit("warrior", barb, raider_at);
+    let before = g.units[&uid].pos;
+    assert_eq!(ai.camp_stall_home_step(&mut g, 0, uid), None);
+    assert_eq!(g.units[&uid].pos, before);
+    // And nothing with the gene off.
+    let (mut g, _, warriors, mut ai) = closed_camp_board();
+    ai.disable_camp_stall_goes_home();
+    assert_eq!(ai.camp_stall_home_step(&mut g, 0, warriors[0]), None);
 }
