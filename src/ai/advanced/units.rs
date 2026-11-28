@@ -2622,6 +2622,9 @@ impl AdvancedAi {
     }
 
     pub(super) fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // `camp-stall-goes-home`: where this pass begins in the log, for the
+        // watch at its end.
+        let pass_begins = g.log.len();
         // Observes only: see `advanced/last_orders.rs`.
         self.open_unit_orders(g, pid);
         self.builder_support.clear();
@@ -3064,6 +3067,10 @@ impl AdvancedAi {
         // A host-refused step first asks for a detour. Only sites with no
         // remaining route are deferred, and only for the refusal's lifetime.
         self.retire_frozen_settler_targets(g);
+        // `camp-stall-goes-home`: did each camp's party stand beside its
+        // guarded camp this pass, and strike it? Nothing with the gene off.
+        // See `advanced/camp_stall_goes_home.rs`.
+        self.observe_camp_stalls(g, pid, pass_begins);
     }
 
     /// Retain reachable city sites across replans; a remembered refusal must

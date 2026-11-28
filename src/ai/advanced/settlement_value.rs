@@ -670,6 +670,9 @@ impl AdvancedAi {
         // `capital-leaves-the-frost`: the first city's frozen ground. Zero
         // with the gene off and once the empire holds a city.
         value -= self.frost_capital_penalty(g, pid, pos);
+        // `camp-stall-goes-home`: a camp the army gave up clearing. Zero
+        // with the gene off. See `advanced/camp_stall_goes_home.rs`.
+        value -= self.camp_stall_site_penalty(g, pos);
         // `contested_land_first`: the ground between us and a neighbour,
         // while the army can hold it. Zero with the gene off.
         value += self.contested_land_credit(g, pid, pos);

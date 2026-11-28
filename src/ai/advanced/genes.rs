@@ -5896,6 +5896,14 @@ pub const GENES: &[Gene] = &[
     // campaign-2` (armed) never plans while any major war is open. See
     // `advanced/city_campaign.rs` and `docs/OFFENSIVE_CAMPAIGN.md`.
     Gene { tag: "city-campaign-3", field: "city_campaign_3", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign_3, disable: AdvancedAi::disable_city_campaign_3 },
+    // Hotseat `hotseat-20261128T031456Z` seat p4 (Phoenicia), turns 10-16:
+    // two and then three Warriors stood within two tiles of a camp a
+    // Spearman held and struck no blow in seven turns (every blow "would
+    // leave it dead next turn"), while Tyre's Settler walked to sites three
+    // tiles from it and was held short. Three such turns close the row for
+    // ten; sites beside that camp lose value. Opt-in; see
+    // `advanced/camp_stall_goes_home.rs`.
+    Gene { tag: "camp-stall-goes-home", field: "camp_stall_goes_home", kind: Kind::OptIn, enable: AdvancedAi::enable_camp_stall_goes_home, disable: AdvancedAi::disable_camp_stall_goes_home },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
