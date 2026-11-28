@@ -1,24 +1,5 @@
 use super::*;
-
-/// Seat p1 (holy, Ottoman) of the owner's game `hotseat-20261128T045523Z`,
-/// turn 32, frame 0, trimmed to the fields the valuation reads: three cities,
-/// two of them Displeased, no luxury, no strategic stockpile, 47 Gold and 2 a
-/// turn. The person (Sumeria, player 0) offers Silver and Sugar.
-const OTTOMAN_T32: &str = r#"{"turn":32,"frame":0,"gold":47,"gold_per_turn":2,"favor":0,"strategic_resources":{},"strategic_resource_income":{},"tourism_per_turn":0,"military":53,"world_era":1,"score":60,"cities":[{"id":65536,"name":"Istanbul","x":18,"y":18,"pop":4,"capital":true,"housing":6,"amenities":2,"amenities_needed":2,"amenities_luxuries":0,"amenities_war_weariness":0,"happiness":4,"happiness_yield_mult":0,"happiness_growth_mult":0,"growth_turns":3,"food_surplus":7,"yields":{"culture":2.19922,"faith":0,"food":15,"gold":5,"production":9,"science":4},"great_works":[],"loyalty":100,"loyalty_per_turn":28},{"id":131073,"name":"Trabzon","x":17,"y":22,"pop":3,"capital":false,"housing":5,"amenities":0,"amenities_needed":2,"amenities_luxuries":0,"amenities_war_weariness":0,"happiness":3,"happiness_yield_mult":-10,"happiness_growth_mult":-15,"growth_turns":3,"food_surplus":2,"yields":{"culture":0.808594,"faith":3.60156,"food":8,"gold":0,"production":7.20312,"science":1.35156},"great_works":[],"loyalty":100,"loyalty_per_turn":17},{"id":196610,"name":"Ankara","x":17,"y":14,"pop":1,"capital":false,"housing":5,"amenities":0,"amenities_needed":1,"amenities_luxuries":0,"amenities_war_weariness":0,"happiness":3,"happiness_yield_mult":-10,"happiness_growth_mult":-15,"growth_turns":2,"food_surplus":1,"yields":{"culture":0.269531,"faith":0,"food":3,"gold":0,"production":4.5,"science":0.453125},"great_works":[],"loyalty":100,"loyalty_per_turn":10.2812}],"rivals":[{"player":0,"civ":"CIVILIZATION_SUMERIA","score":102,"military":123,"at_war":false,"diplomatic_state":"DIPLO_STATE_FRIENDLY","gold":26,"gold_per_turn":9,"tradeable_luxuries":["RESOURCE_SILVER","RESOURCE_SUGAR"],"tradeable_strategics":[],"our_denounce_turn":-1,"their_denounce_turn":-1},{"player":2,"civ":"CIVILIZATION_PHOENICIA","score":50,"military":99,"at_war":false,"diplomatic_state":"DIPLO_STATE_FRIENDLY","gold":10.2227,"gold_per_turn":7.50391,"tradeable_luxuries":[],"tradeable_strategics":[],"our_denounce_turn":-1,"their_denounce_turn":-1},{"player":3,"civ":"CIVILIZATION_CANADA","score":44,"military":38,"at_war":false,"diplomatic_state":"DIPLO_STATE_NEUTRAL","gold":65,"gold_per_turn":8,"tradeable_luxuries":["RESOURCE_FURS"],"tradeable_strategics":{"RESOURCE_HORSES":10},"our_denounce_turn":-1,"their_denounce_turn":-1}]}"#;
-
-/// Seat p3 (moonshot, Canada) of the same game and turn: two Content cities
-/// served by its only luxury (one Furs), 12 Horses rising 2 a turn, 73 Gold
-/// and 8 a turn.
-const CANADA_T32: &str = r#"{"turn":32,"frame":0,"gold":73,"gold_per_turn":8,"favor":0,"luxury_counts":{"RESOURCE_FURS":1},"strategic_resources":{"RESOURCE_HORSES":12},"strategic_resource_income":{"RESOURCE_HORSES":2},"tourism_per_turn":0,"military":32,"world_era":1,"score":44,"cities":[{"id":65536,"name":"Ottawa","x":18,"y":8,"pop":4,"capital":true,"housing":7,"amenities":3,"amenities_needed":2,"amenities_luxuries":1,"amenities_war_weariness":0,"happiness":4,"happiness_yield_mult":0,"happiness_growth_mult":0,"growth_turns":2,"food_surplus":5,"yields":{"culture":2.19922,"faith":0,"food":13,"gold":8,"production":10,"science":4},"great_works":[],"loyalty":100,"loyalty_per_turn":28},{"id":131073,"name":"Halifax","x":13,"y":7,"pop":2,"capital":false,"housing":5,"amenities":1,"amenities_needed":1,"amenities_luxuries":1,"amenities_war_weariness":0,"happiness":4,"happiness_yield_mult":0,"happiness_growth_mult":0,"growth_turns":1,"food_surplus":3,"yields":{"culture":0.597656,"faith":0,"food":7,"gold":0,"production":3,"science":1},"great_works":[],"loyalty":100,"loyalty_per_turn":20}],"rivals":[{"player":0,"civ":"CIVILIZATION_SUMERIA","score":102,"military":123,"at_war":false,"diplomatic_state":"DIPLO_STATE_UNFRIENDLY","gold":26,"gold_per_turn":9,"tradeable_luxuries":["RESOURCE_SILVER","RESOURCE_SUGAR"],"tradeable_strategics":[],"our_denounce_turn":-1,"their_denounce_turn":-1},{"player":1,"civ":"CIVILIZATION_OTTOMAN","score":60,"military":53,"at_war":false,"diplomatic_state":"DIPLO_STATE_FRIENDLY","gold":2.5,"gold_per_turn":2,"tradeable_luxuries":[],"tradeable_strategics":[],"our_denounce_turn":-1,"their_denounce_turn":-1}]}"#;
-
-/// A real board as the decider reads it, at the game's speed and length
-/// (`config.json`: `GAMESPEED_ONLINE`, 250 turns).
-fn board(json: &str) -> StateSnapshot {
-    let mut state: StateSnapshot = serde_json::from_str(json).expect("a real state record parses");
-    state.seat.speed = "GAMESPEED_ONLINE".to_string();
-    state.seat.max_turns = 250;
-    state
-}
+use crate::trade_decider::fixtures::{board, CANADA_T32, OTTOMAN_T32};
 
 fn ottoman() -> Position {
     Position::from_board(&board(OTTOMAN_T32), Some(VictoryTarget::Religion))

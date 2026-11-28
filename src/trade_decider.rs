@@ -21,6 +21,9 @@
 
 pub mod value;
 
+#[cfg(test)]
+mod fixtures;
+
 /// One thing that can change hands in a deal, as one side sees it.
 ///
 /// Whether it is given or received is the side of the [`Deal`] it sits on.
