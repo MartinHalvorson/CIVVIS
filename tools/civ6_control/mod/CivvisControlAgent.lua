@@ -14545,9 +14545,14 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 			round = session.round };
 		seat.heard[other] = nil;
 	end
+	-- `held_ms`: from the session's request to this send, real seconds
+	-- (`CivvisClock`), the part of the seat's turn the deal took.
+	local now = try(function() return CivvisClock.now(); end, nil);
+	local heldMs = (type(now) == "number" and type(session.opened_at) == "number"
+		and now >= session.opened_at) and math.floor((now - session.opened_at) * 1000 + 0.5) or nil;
 	emit("deal_answer", { turn = turn, to = other, to_kind = CivvisTrade.seatKind(other),
 		verb = session.verb, action = session.action, id = session.id, round = session.round,
-		session = sessionID or -1, sent = sent, why = why,
+		session = sessionID or -1, sent = sent, why = why, held_ms = heldMs,
 		pending_from_them = theirs, pending_from_us = ours });
 	if sent and CivvisTrade.seatKind(other) == "person" then
 		pcall(CivvisTrade.seatNote, pid, other, session, turn);
@@ -14571,6 +14576,127 @@ CivvisTrade.seatNote = function(pid, other, session, turn)
 	notes[#notes + 1] = { n = notes.n, seat = pid, to = other, verb = session.verb,
 		turn = turn, id = session.id };
 	while #notes > 8 do table.remove(notes, 1); end
+end;
+
+-- ★ CHECK GAMES ONLY: THE STAND-IN'S DEALS. A gated check game
+-- (`--auto-human gated`) has no person to put a deal to a CIVVIS seat or to
+-- look at one a seat put to them, so the person's two moments with deals were
+-- never seen live: the owner's own turn-12 proposal to seat 4 of
+-- hotseat-20261128T045523Z sat unanswered for fifteen turns, and what a
+-- person's turn shows of a pending deal is said by no shipped script (the
+-- DIPLOMACY_SESSION notification's activation "is handled by the C++ side",
+-- Base/Assets/UI/Panels/NotificationPanel.lua:1403-1405). Two keys that only
+-- `tools/civ6_hotseat.py --stand-in-deal` / `--stand-in-deal-hold` write, and
+-- only with `--auto-human`:
+--   * `StandInDeals` = { { turn = T, to = S, verb = "PROPOSE;give=..;get=.." }, .. }:
+--     on the stand-in's first turn at or after T the deal goes to seat S as a
+--     `deal` order (`seatOrder`, the CIVVIS seats' own path: the shipped deal
+--     screen's calls inside a MAKE_DEAL session); S of -1 is the lowest
+--     CIVVIS seat it may ask. One sent a turn. A refusal that passes with
+--     time (not met yet, at war, a session or a pending deal in the way, the
+--     cooldown) is tried again the next turn; any other ends it.
+--   * `StandInDealAnswer` = "ACCEPT" | "REJECT": a deal another seat put to
+--     the stand-in is answered so on its next turn after the one it was first
+--     seen on (the person's accept or refusal, by the same `deal` order).
+--   * `StandInDealHoldSeconds` = N: while a deal from another seat waits for
+--     the stand-in, its end of turn is held N seconds (`holdsEndTurn`), so a
+--     check game can photograph what that turn shows.
+-- Records `stand_in_deal` (each try) and `stand_in_deal_hold`. Only the
+-- stand-in's own context acts (`CivvisSeat.standsIn`): a CIVVIS seat, a
+-- person's seat (it has no context) and every single-player run read false.
+CivvisTrade.standIn = { done = {}, answered = {}, tried = nil, hold = nil };
+CivvisTrade.STAND_IN_RETRY = { deal_not_met = true, deal_at_war = true, deal_session_busy = true,
+	deal_pending_exists = true, deal_cooldown = true, deal_no_seat = true };
+-- The seat a `to` of -1 (`*`) means: the lowest CIVVIS seat met, at peace,
+-- with nothing pending either way.
+CivvisTrade.standInTarget = function(player, pid)
+	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
+	local seats = {};
+	for _, seat in ipairs(cfg.HotseatSeats or {}) do seats[#seats + 1] = tonumber(seat); end
+	table.sort(seats);
+	for _, other in ipairs(seats) do
+		if other ~= pid and diplomacy ~= nil
+				and try(function() return diplomacy:HasMet(other); end, false) == true
+				and try(function() return diplomacy:IsAtWarWith(other); end, true) == false
+				and try(function() return DealManager.HasPendingDeal(pid, other); end, true) == false
+				and try(function() return DealManager.HasPendingDeal(other, pid); end, true) == false then
+			return other;
+		end
+	end
+	return nil;
+end;
+CivvisTrade.standInDeals = function(player, pid, turn)
+	if not CivvisSeat.standsIn() then return; end
+	local st = CivvisTrade.standIn;
+	if st.tried == turn then return; end
+	st.tried = turn;
+	-- `StandInDealAnswer` (ACCEPT or REJECT): a deal another seat put to the
+	-- stand-in is answered on its turn AFTER the one it was first seen on, so
+	-- that first turn shows it pending (and `standInHolds` can hold it).
+	local answer = cfg.StandInDealAnswer;
+	if answer == "ACCEPT" or answer == "REJECT" then
+		for other, seen in pairs(CivvisTrade.seat.seen) do
+			if type(seen) == "table" and seen.first ~= nil and seen.first < turn
+					and st.answered[other] ~= seen.id then
+				st.answered[other] = seen.id;
+				local ok, why = CivvisTrade.seatOrder(player, pid, other, answer, seen.id, turn);
+				emit("stand_in_deal", { turn = turn, answer = answer, to = other, id = seen.id,
+					first_seen_turn = seen.first, ok = ok == true, why = why });
+				-- One session a turn.
+				if ok then return; end
+			end
+		end
+	end
+	if type(cfg.StandInDeals) ~= "table" then return; end
+	for index, entry in ipairs(cfg.StandInDeals) do
+		if st.done[index] == nil and type(entry) == "table"
+				and turn >= (tonumber(entry.turn) or math.huge) then
+			local to = tonumber(entry.to);
+			if to == nil or to < 0 then to = CivvisTrade.standInTarget(player, pid); end
+			local ok, why = false, "deal_no_seat";
+			if to ~= nil then
+				ok, why = CivvisTrade.seatOrder(player, pid, to, tostring(entry.verb or ""), nil, turn);
+			end
+			if ok or not CivvisTrade.STAND_IN_RETRY[why] then st.done[index] = turn; end
+			emit("stand_in_deal", { turn = turn, index = index, to = to, verb = tostring(entry.verb or ""),
+				ok = ok == true, why = why, done = st.done[index] ~= nil });
+			if ok then return; end
+		end
+	end
+end;
+-- `holdsEndTurn`'s first question: is this the stand-in's turn with another
+-- seat's deal waiting for it, younger than `StandInDealHoldSeconds`? Looked
+-- at once a turn, at its first end-turn request.
+CivvisTrade.standInHolds = function(turn)
+	local seconds = tonumber(cfg.StandInDealHoldSeconds);
+	if seconds == nil or seconds ~= seconds or seconds <= 0 or not CivvisSeat.standsIn() then
+		return false;
+	end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" or now ~= now then return false; end
+	local st = CivvisTrade.standIn;
+	local hold = st.hold;
+	if hold == nil or hold.turn ~= turn then
+		local pid = CivvisSeat.seat;
+		local from = nil;
+		for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, nil) or {}) do
+			if from == nil and other ~= pid
+					and try(function() return DealManager.HasPendingDeal(other, pid); end, nil) == true then
+				from = other;
+			end
+		end
+		hold = { turn = turn, at = now, from = from, released = from == nil };
+		st.hold = hold;
+		if from ~= nil then
+			emit("stand_in_deal_hold", { turn = turn, from = from, phase = "holding", seconds = seconds });
+		end
+	end
+	if hold.released then return false; end
+	if now >= hold.at and now - hold.at < seconds then return true; end
+	hold.released = true;
+	emit("stand_in_deal_hold", { turn = turn, from = hold.from, phase = "released",
+		held = math.floor((now - hold.at) * 10 + 0.5) / 10 });
+	return false;
 end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
@@ -27566,6 +27692,8 @@ local function playTurn(player, pid, turn)
 		-- trigger so its captured board cannot contain the previous turn's map.
 		exportTiles(player, pid, turn);
 		exportState(player, pid, turn);
+		-- A check game's stand-in puts its listed deal (`standInDeals`).
+		CivvisK.guard(function() CivvisTrade.standInDeals(player, pid, turn); end);
 	end
 	local war = declareWar(player, pid, countUnits(player), turn);
 	local builds = driveProduction(player, turn);
@@ -28105,6 +28233,9 @@ end;
 -- again next turn (see "CLOSED, NOT ASKED"), a trade ask is put late.
 CivvisTrade.OPENING_HOLD_SECONDS = 3;
 CivvisTrade.holdsEndTurn = function(turn)
+	-- A check game's stand-in, over a deal waiting for it (`standInHolds`).
+	local standInRan, standInHeld = pcall(CivvisTrade.standInHolds, turn);
+	if standInRan and standInHeld == true then return true; end
 	-- Opening, asked and counter-wait sessions still own a live UI reply.
 	-- Native 20261108T084123Z t147 forced EndTurn between a queued opening
 	-- and its answer. The abandoned-ask hold below did not cover that gap.

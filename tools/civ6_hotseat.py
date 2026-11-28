@@ -492,7 +492,39 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         })
     if args.auto_human:
         config["HotseatNames"][str(HUMAN_SEAT)] = "Test stub"
+        # `--stand-in-deal` / `--stand-in-deal-hold`: the check games' deals
+        # from and to the stand-in (CivvisControlAgent.lua
+        # `CivvisTrade.standInDeals`, `standInHolds`). Test tables only.
+        deals = stand_in_deals(getattr(args, "stand_in_deal", None) or [])
+        if deals:
+            config["StandInDeals"] = deals
+        hold = getattr(args, "stand_in_deal_hold", None)
+        if hold:
+            config["StandInDealHoldSeconds"] = float(hold)
+        if getattr(args, "stand_in_deal_answer", None):
+            config["StandInDealAnswer"] = args.stand_in_deal_answer
     return config
+
+
+#: `--stand-in-deal TURN:SEAT:VERB`: the `deal` order grammar's verb
+#: (`PROPOSE;give=GOLD=40;get=`), one deal a flag; SEAT `*` is any CIVVIS seat.
+STAND_IN_DEAL = re.compile(r"^(\d+):(\d+|\*):((?:PROPOSE|WITHDRAW)(?:;(?:give|get)=[A-Z0-9_=@#,]*)*)$")
+
+
+def stand_in_deals(specs: list[str]) -> list[dict]:
+    """`--stand-in-deal` specs as the mod's `StandInDeals` rows
+    (`{turn, to, verb}`), in the order given. A spec that does not read raises
+    ValueError naming it."""
+    rows = []
+    for spec in specs:
+        match = STAND_IN_DEAL.match(spec.strip())
+        if not match:
+            raise ValueError(f"--stand-in-deal {spec!r}: expected TURN:SEAT:VERB, e.g. "
+                             "8:3:PROPOSE;give=GOLD=40;get=")
+        # `*`: the lowest CIVVIS seat the stand-in may ask then (-1 to the mod).
+        rows.append({"turn": int(match[1]), "to": -1 if match[2] == "*" else int(match[2]),
+                     "verb": match[3]})
+    return rows
 
 
 def fast_animations_note(args: argparse.Namespace, config: dict) -> str | None:
@@ -3883,6 +3915,17 @@ def main(argv: list[str] | None = None) -> int:
                          "the stub's own announcements are closed and its quiet turns ended")
     ap.add_argument("--turns", type=int, default=None,
                     help="stop after this game turn (with --auto-human: then report)")
+    ap.add_argument("--stand-in-deal", action="append", default=[], metavar="TURN:SEAT:VERB",
+                    help="TEST (with --auto-human): on its first turn from TURN the stand-in "
+                         "puts this deal to seat SEAT (`*`: any CIVVIS seat it has met) through the "
+                         "game's own deal screen calls, e.g. '8:3:PROPOSE;give=GOLD=40;get=' (the "
+                         "`deal` order's verb); repeat for more")
+    ap.add_argument("--stand-in-deal-answer", choices=["ACCEPT", "REJECT"], default=None,
+                    help="TEST (with --auto-human): a deal another seat puts to the stand-in is "
+                         "answered so on its next turn after the one it was first seen on")
+    ap.add_argument("--stand-in-deal-hold", type=float, default=None, metavar="SECONDS",
+                    help="TEST (with --auto-human): while another seat's deal waits for the "
+                         "stand-in, its end of turn is held this long (to photograph that turn)")
     ap.add_argument(SCREEN_FREE_FLAG, dest="manual_lobby", action="store_true",
                     help="you set up and start the Hot Seat game in Civ VI; this only installs "
                          "the mod, reads the log and writes orders: nothing is launched, "
@@ -3905,6 +3948,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.fast_animations_rollover and args.fast_animations is None:
         print("--fast-animations-rollover goes with --fast-animations", file=sys.stderr)
+        return 2
+    if (args.stand_in_deal or args.stand_in_deal_hold or args.stand_in_deal_answer) \
+            and not args.auto_human:
+        print("--stand-in-deal, --stand-in-deal-answer and --stand-in-deal-hold are for test "
+              "tables: they go with --auto-human", file=sys.stderr)
+        return 2
+    try:
+        stand_in_deals(args.stand_in_deal)
+    except ValueError as error:
+        print(error, file=sys.stderr)
         return 2
     if args.stop:
         return stop_command(args)

@@ -67,6 +67,43 @@ class HotseatConfigTest(unittest.TestCase):
         self.assertEqual((gated["HotseatHumanSeats"], gated["HotseatStubSeats"]), ([0], [0]))
         self.assertEqual(hotseat.agent_seats(3, False), [1, 2])
 
+    def test_the_stand_in_deals_are_for_test_tables_only(self) -> None:
+        keys = ("StandInDeals", "StandInDealHoldSeconds", "StandInDealAnswer")
+        plain = hotseat.hotseat_config(game_args(auto_human="gated"), Path("/tmp/r"),
+                                       Path("/tmp/r/o.sqlite"))
+        self.assertFalse(set(keys) & set(plain), "not asked: no key at all")
+        asked = dict(stand_in_deal=["5:*:PROPOSE;give=GOLD=25;get=",
+                                    "9:3:PROPOSE;give=GOLD=5;get=GOLD=4@30"],
+                     stand_in_deal_hold=6.0, stand_in_deal_answer="ACCEPT")
+        config = hotseat.hotseat_config(game_args(auto_human="gated", **asked), Path("/tmp/r"),
+                                        Path("/tmp/r/o.sqlite"))
+        self.assertEqual(config["StandInDeals"], [
+            {"turn": 5, "to": -1, "verb": "PROPOSE;give=GOLD=25;get="},
+            {"turn": 9, "to": 3, "verb": "PROPOSE;give=GOLD=5;get=GOLD=4@30"}])
+        self.assertEqual((config["StandInDealHoldSeconds"], config["StandInDealAnswer"]),
+                         (6.0, "ACCEPT"))
+        # A person's table never carries them, whatever the namespace holds.
+        person = hotseat.hotseat_config(game_args(**asked), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertFalse(set(keys) & set(person))
+        # The command refuses them without --auto-human, and a spec it cannot read.
+        with patch.object(hotseat, "run") as run, patch.object(hotseat, "read_current", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(hotseat.main(["--stand-in-deal", "5:*:PROPOSE;give=GOLD=25;get="]), 2)
+            self.assertEqual(hotseat.main(["--stand-in-deal-answer", "ACCEPT"]), 2)
+            self.assertEqual(hotseat.main(["--auto-human", "gated", "--stand-in-deal", "5:x:BRIBE"]), 2)
+            run.assert_not_called()
+        self.assertIn("go with --auto-human", err.getvalue())
+        self.assertIn("expected TURN:SEAT:VERB", err.getvalue())
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main(["--auto-human", "gated", "--stand-in-deal", "7:2:PROPOSE;give=GOLD=10;get=",
+                          "--stand-in-deal-hold", "4"])
+            given = ran.call_args.args[0]
+        config = hotseat.hotseat_config(given, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual(config["StandInDeals"], [{"turn": 7, "to": 2, "verb": "PROPOSE;give=GOLD=10;get="}])
+        self.assertEqual(config["StandInDealHoldSeconds"], 4.0)
+        self.assertNotIn("StandInDealAnswer", config)
+
     def test_a_random_leader_pins_nothing(self) -> None:
         config = hotseat.hotseat_config(game_args(leader=None), Path("/tmp/r"),
                                         Path("/tmp/r/o.sqlite"))
