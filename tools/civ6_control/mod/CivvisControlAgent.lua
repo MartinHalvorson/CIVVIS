@@ -26406,14 +26406,37 @@ local function beginTurn(player, pid, turn)
 	--
 	-- Losing every city is the definition of elimination here, and it is observable
 	-- from inside without relying on an event that does not arrive.
-	if not defeatReported and turn > 5 then
+	--
+	-- ⚠ LOSING, not "having none". A seat that has not founded its first city yet
+	-- has no cities either, and it is very much in the game. Live 2026-11-27
+	-- (hotseat check `live-6p-20261128T0446Zd`): seat 1 drew Kupe, who starts at
+	-- sea; on turn 6 it still held its Settler and its Warrior ("cities 0, units
+	-- 2" every turn), this rule wrote `defeat … no cities remain`, the controller
+	-- stopped for good (`finished`), and from then on that seat's turn stood until
+	-- the HUD's seat watch ended it: 45 s of a person's wait, every round. So a
+	-- seat with no cities is defeated only once it has had one, or once it has
+	-- nothing left to found one with (`Units.FoundCity`, the Settler's own row).
+	-- `CivvisSeat.founded` is this context's memory of having held a city; a game
+	-- loaded onto a seat that already lost its last one never plays that seat again.
+	if not defeatReported then
 		local alive = 0;
 		eachCity(player, function() alive = alive + 1; end);
-		if alive == 0 then
-			defeatReported = true;
-			finished = true;
-			emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
-			                 local_player = pid });
+		if alive > 0 then
+			CivvisSeat.founded = true;
+		elseif turn > 5 then
+			local founder = false;
+			if not CivvisSeat.founded then
+				eachUnit(player, function(unit)
+					local info = GameInfo.Units[unitTypeName(unit)];
+					if info ~= nil and info.FoundCity == true then founder = true; end
+				end);
+			end
+			if not founder then
+				defeatReported = true;
+				finished = true;
+				emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
+				                 local_player = pid });
+			end
 		end
 	end
 

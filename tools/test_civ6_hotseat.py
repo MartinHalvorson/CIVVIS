@@ -2131,15 +2131,109 @@ class PersonsEndingTest(unittest.TestCase):
 
     def test_the_turn_limit_ends_it_on_score(self) -> None:
         # Civ VI ends a game at its turn limit with a Score victory, a victory
-        # row like any other (CivvisControlAgent.lua: "a victory row too").
-        for team, winner in ((2, "tourist"), (0, "person")):
-            with tempfile.TemporaryDirectory() as tmp, self.subTest(winner):
+        # row like any other (CivvisControlAgent.lua: "a victory row too"):
+        # VICTORY_SCORE, index 0 on this install (the live game's own
+        # `victory_types`; Victories.xml:553, the max turn reached). Written
+        # by the seat that was local, or by the table whoever was.
+        for where, team, winner in (("hs-p5/events.jsonl", 2, "tourist"), ("hs-p5/events.jsonl", 0, "person"),
+                                    ("events.jsonl", 2, "tourist"), ("events.jsonl", 0, "person")):
+            with tempfile.TemporaryDirectory() as tmp, self.subTest(where=where, winner=winner):
                 run_dir = Path(tmp)
                 monitor, args = self.table(run_dir)
-                self.event(run_dir, "hs-p5/events.jsonl", kind="victory", team=team, victory=0,
-                           victory_type="VICTORY_DEFAULT", turn=251, t=1795800000)
+                members = {"members": [team], "ctx": "heartbeat"} if where == "events.jsonl" else {}
+                self.event(run_dir, where, kind="victory", team=team, victory=0,
+                           victory_type="VICTORY_SCORE", turn=251, t=1795800000, **members)
                 row, _ = self.recorded(run_dir, monitor, args)
-                self.assertEqual((row["winner"], row["victory"], row["turn"]), (winner, "VICTORY_DEFAULT", 251))
+                self.assertEqual((row["winner"], row["victory"], row["turn"]), (winner, "VICTORY_SCORE", 251))
+
+    #: The table's own record of a victory, exactly as CivvisControlHeartbeat.lua
+    #: writes it (`CivvisEnding.onVictory`, heartbeat_test.lua): a culture win
+    #: raised on the person's own turn, when no seat's context is open.
+    TABLE_VICTORY = {"ctx": "heartbeat", "kind": "victory", "run": "hs", "t": 1795850000, "turn": 201, "team": 0,
+                     "victory": 3, "victory_type": "VICTORY_CULTURE", "members": [0], "source": "table",
+                     "local_player": 0}
+
+    def test_a_victory_on_the_persons_own_turn_is_read_from_the_tables_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args = self.table(run_dir)
+            self.event(run_dir, "events.jsonl", **self.TABLE_VICTORY)
+            row, _ = self.recorded(run_dir, monitor, args)
+            self.assertEqual((row["winner"], row["victory"], row["turn"], row["ended"]),
+                             ("person", "VICTORY_CULTURE", 201, "2026-11-28T07:13:20Z"))
+            self.assertEqual((monitor.result["members"], monitor.result["person"], monitor.result["ours"]),
+                             ([0], True, False))
+
+    def test_the_tables_record_names_the_winner_where_a_team_number_does_not(self) -> None:
+        # The seats' own `seat` records name no team (the live game's are all
+        # null), so a seat's record of a team that is not a seat number read
+        # as nobody's seat: the person's win. The table's players say whose.
+        for where in ("events.jsonl", "hs-p4/events.jsonl"):
+            with tempfile.TemporaryDirectory() as tmp, self.subTest(where):
+                run_dir = Path(tmp)
+                monitor, args = self.table(run_dir)
+                self.event(run_dir, where, **{**self.TABLE_VICTORY, "team": 7, "members": [4],
+                                              "victory_type": "VICTORY_CONQUEST", "victory": 2})
+                row, _ = self.recorded(run_dir, monitor, args)
+                self.assertEqual(row["winner"], "siege")
+                self.assertEqual((monitor.result["winner_seat"], monitor.result["person"]), (4, False))
+        # The seat's record first (team only), the table's after it: the
+        # table's players decide, and the first record's clock stays.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args = self.table(run_dir)
+            self.event(run_dir, "hs-p4/events.jsonl", kind="victory", team=7, victory=2,
+                       victory_type="VICTORY_CONQUEST", turn=140, t=1795800000)
+            with contextlib.redirect_stdout(io.StringIO()):
+                monitor.poll()
+            self.assertEqual((monitor.result["ours"], monitor.result.get("members")), (False, None))
+            self.event(run_dir, "events.jsonl", **{**self.TABLE_VICTORY, "team": 7, "members": [4],
+                                                   "turn": 140, "t": 1795800001})
+            row, _ = self.recorded(run_dir, monitor, args)
+            self.assertEqual((row["winner"], row["ended"]), ("siege", "2026-11-27T17:20:00Z"))
+
+    def test_the_first_victory_stands_through_one_more_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args = self.table(run_dir)
+            self.event(run_dir, "events.jsonl", **self.TABLE_VICTORY)
+            first, _ = self.recorded(run_dir, monitor, args)
+            # Played on: a later victory of another team, from the table and
+            # from a seat, and the seat's own word on the first one.
+            self.event(run_dir, "events.jsonl", **{**self.TABLE_VICTORY, "team": 3, "members": [3],
+                                                   "turn": 230, "t": 1795900000})
+            self.event(run_dir, "hs-p3/events.jsonl", kind="victory", team=3, victory=5, turn=231, t=1795900100)
+            self.event(run_dir, "hs-p2/events.jsonl", kind="victory", team=0, victory=3, turn=201, t=1795850001)
+            last, _ = self.recorded(run_dir, monitor, args, reason="Civ VI closed")
+            self.assertEqual(first, last)
+            self.assertEqual(last["winner"], "person")
+        # The first word a seat's (no players named), a later victory the
+        # table's: the later one is another ending, not a better word on it.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args = self.table(run_dir)
+            self.event(run_dir, "hs-p2/events.jsonl", kind="victory", team=0, victory=3,
+                       victory_type="VICTORY_CULTURE", turn=201, t=1795850000)
+            first, _ = self.recorded(run_dir, monitor, args)
+            self.event(run_dir, "events.jsonl", **{**self.TABLE_VICTORY, "team": 3, "members": [3],
+                                                   "turn": 230, "t": 1795900000})
+            last, _ = self.recorded(run_dir, monitor, args, reason="Civ VI closed")
+            self.assertEqual((first, last["winner"]), (last, "person"))
+
+    def test_an_unattended_tables_victory_is_read_from_the_tables_record_too(self) -> None:
+        # selfplay-duel-20261127T0808Z's ending, as the table would have said it.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            args = game_args(players=2, civvis_seats=2, agents=["jack", "holy"], victories_off=[])
+            monitor = hotseat.Monitor(run_dir, "sp", [0, 1], args, lambda m: None)
+            self.addCleanup(monitor.close)
+            self.event(run_dir, "events.jsonl", ctx="heartbeat", kind="victory", run="sp", t=1795767707,
+                       turn=119, team=1, victory=4, victory_type="VICTORY_RELIGIOUS", members=[1],
+                       source="table", local_player=0)
+            monitor.poll()
+            self.assertEqual({k: monitor.result[k] for k in ("ours", "winner_seat", "members", "at")},
+                             {"ours": True, "winner_seat": 1, "members": [1], "at": "2026-11-27T08:21:47Z"})
+            self.assertNotIn("person", monitor.result, "nobody's seat is a person's at an unattended table")
 
     def test_the_person_resigns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
