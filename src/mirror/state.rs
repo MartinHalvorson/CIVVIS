@@ -1419,6 +1419,12 @@ pub struct StateRival {
     /// [`apply_rival_wars`].
     #[serde(default)]
     pub at_war_with: Option<Vec<usize>>,
+    /// Hotseat only: whether a person plays this rival (`person`, written by
+    /// the mod from `HotseatHumanSeats` on a hotseat install). `None` on
+    /// every other export and for every rival a CIVVIS seat plays. Mirrored
+    /// into [`Game::observed_person_rivals`] by [`apply_person_rivals`].
+    #[serde(default)]
+    pub person: Option<bool>,
     /// Whether this rival currently grants OUR seat Open Borders — the shipped
     /// overview's "received" direction (`HasOpenBordersFrom`). The import
     /// records the grant on the mirrored seat and stops sealing that rival's

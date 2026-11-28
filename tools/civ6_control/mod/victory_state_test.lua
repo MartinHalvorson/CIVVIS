@@ -6,6 +6,8 @@ for _, fail in ipairs({false, true}) do
     local rows, exported = {}, false;
     local env = setmetatable({
         pcall = pcall, tostring = tostring,
+        -- The ladder's config: no Hotseat key (one_more_turn_test.lua has a hotseat seat's).
+        cfg = {}, CivvisSeat = {},
         try = function(fn, fallback) local ok, v = pcall(fn); if ok then return v; end return fallback; end,
         Game = {GetLocalPlayer = function() return 0; end, GetCurrentGameTurn = function() return 173; end},
         Players = {[0] = {GetTeam = function() return 0; end, GetScore = function() return 672; end}},

@@ -9348,6 +9348,20 @@ local function exportState(player, pid, turn, frame, eventKind)
 				-- (`CivvisRivalWars`): an ally already at war with our enemy
 				-- is the Military Alliance's +5.
 				at_war_with = CivvisRivalWars(pid, otherId),
+				-- Hotseat only: whether a person plays this rival. The harness
+				-- lists the person's seat in `HotseatHumanSeats`; a person can
+				-- declare war and take a civilian on one turn, so the decider's
+				-- opt-in `person-units-threaten-civilians` reads their soldiers as
+				-- able to take ours whatever the war state. nil on every other
+				-- install and for every rival a CIVVIS seat plays, so a
+				-- single-player or ladder board is byte for byte as before.
+				person = (function()
+					if cfg.Hotseat ~= true then return nil; end
+					for _, seat in ipairs(cfg.HotseatHumanSeats or {}) do
+						if tonumber(seat) == otherId then return true; end
+					end
+					return nil;
+				end)(),
 				-- Whether this rival currently grants OUR seat Open Borders —
 				-- the shipped overview's "received" direction
 				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
@@ -26392,14 +26406,37 @@ local function beginTurn(player, pid, turn)
 	--
 	-- Losing every city is the definition of elimination here, and it is observable
 	-- from inside without relying on an event that does not arrive.
-	if not defeatReported and turn > 5 then
+	--
+	-- ⚠ LOSING, not "having none". A seat that has not founded its first city yet
+	-- has no cities either, and it is very much in the game. Live 2026-11-27
+	-- (hotseat check `live-6p-20261128T0446Zd`): seat 1 drew Kupe, who starts at
+	-- sea; on turn 6 it still held its Settler and its Warrior ("cities 0, units
+	-- 2" every turn), this rule wrote `defeat … no cities remain`, the controller
+	-- stopped for good (`finished`), and from then on that seat's turn stood until
+	-- the HUD's seat watch ended it: 45 s of a person's wait, every round. So a
+	-- seat with no cities is defeated only once it has had one, or once it has
+	-- nothing left to found one with (`Units.FoundCity`, the Settler's own row).
+	-- `CivvisSeat.founded` is this context's memory of having held a city; a game
+	-- loaded onto a seat that already lost its last one never plays that seat again.
+	if not defeatReported then
 		local alive = 0;
 		eachCity(player, function() alive = alive + 1; end);
-		if alive == 0 then
-			defeatReported = true;
-			finished = true;
-			emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
-			                 local_player = pid });
+		if alive > 0 then
+			CivvisSeat.founded = true;
+		elseif turn > 5 then
+			local founder = false;
+			if not CivvisSeat.founded then
+				eachUnit(player, function(unit)
+					local info = GameInfo.Units[unitTypeName(unit)];
+					if info ~= nil and info.FoundCity == true then founder = true; end
+				end);
+			end
+			if not founder then
+				defeatReported = true;
+				finished = true;
+				emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
+				                 local_player = pid });
+			end
 		end
 	end
 
@@ -29614,6 +29651,8 @@ local function onTeamVictory(team, victoryType, eventID)
 		end
 	end);
 	if not exported then emit("final_state_error", {error = tostring(exportError)}); end
+	-- Hotseat: "Just One More Turn" plays on with this seat (`CivvisSeat.oneMoreTurn`).
+	if cfg.Hotseat == true and not finished then CivvisSeat.victoryStop = true; end
 	finished = true;
 	emit("victory", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
@@ -29638,12 +29677,35 @@ local function onPlayerDefeat(player, defeat, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	if player == pid then
 		finished = true;
+		-- A seat defeated is done, one more turn or not.
+		CivvisSeat.victoryStop = nil;
 		pcall(CivvisQueue.resetTimescale, "defeated");
 	end
 	emit("defeat", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		player = player, defeat = defeat, local_player = pid,
 		ours = (player == pid),
+	});
+end
+
+-- ★ "JUST ONE MORE TURN" PLAYS ON (hotseat only). A victory stops the seat
+-- that was local when it came (`onTeamVictory`: `finished`, for good on the
+-- ladder, whose harness ends the game there). In a person's game the end
+-- screen offers to play on (Base/Assets/UI/EndGame/EndGameMenu.lua:349-351
+-- `function OnBack() Close(); LuaEvents.EndGameMenu_OneMoreTurn(); end`),
+-- and the game goes on with every seat: before 2026-11-28 the seat this
+-- context plays was then played by nobody, its turn standing until the
+-- cover stood aside. A seat the victory stopped plays again; one defeated
+-- (`onPlayerDefeat`, "no cities remain") stays stopped. Every context hears
+-- the event (LuaEvents reach hidden contexts too) and only the one the
+-- victory stopped answers it.
+function CivvisSeat.oneMoreTurn()
+	if cfg.Hotseat ~= true or CivvisSeat.victoryStop ~= true then return; end
+	CivvisSeat.victoryStop = nil;
+	finished = false;
+	emit("one_more_turn", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		local_player = try(function() return Game.GetLocalPlayer(); end, -1),
 	});
 end
 
@@ -30617,6 +30679,10 @@ function Initialize()
 	end
 	-- A second listener: an open escape is re-read when our turn begins.
 	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisSeat.gate(CivvisLedger.flushSpyMissions)); end);
+	-- Hotseat: the end screen's "Just One More Turn" (`CivvisSeat.oneMoreTurn`).
+	if cfg.Hotseat == true then
+		pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn); end);
+	end
 	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.wire(); end
 end
 

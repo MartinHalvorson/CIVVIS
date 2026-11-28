@@ -2903,6 +2903,8 @@ const RIVAL_KEYS: &[&str] = &[
     "at_war",
     // Its wars with other majors (#4452), read as `Game::observed_rival_wars`.
     "at_war_with",
+    // Hotseat: a person plays it, read as `Game::observed_person_rivals`.
+    "person",
     "techs",
     "civics",
     "cities",
@@ -7496,8 +7498,11 @@ fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
 }
 
 /// Who each met rival is fighting besides us. See [`apply_rival_wars`].
+/// And, on a hotseat board, which of them a person plays: see
+/// [`apply_person_rivals`].
 fn step_rival_wars(ctx: &mut HostStepCtx<'_>) {
     apply_rival_wars(ctx.game, ctx.state, ctx.seat_of_host);
+    apply_person_rivals(ctx.game, ctx.state, ctx.seat_of_host);
 }
 
 fn step_host_war_types(ctx: &mut HostStepCtx<'_>) {

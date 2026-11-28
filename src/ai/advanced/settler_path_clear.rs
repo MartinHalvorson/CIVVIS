@@ -117,9 +117,11 @@ impl AdvancedAi {
         if !road_seen {
             return false;
         }
+        // `person-units-threaten-civilians`: a person's soldier is a hostile
+        // here at any war state. Off, exactly `is_at_war`.
         let hostile_near = g.units.values().any(|unit| {
             unit.owner != pid
-                && g.is_at_war(pid, unit.owner)
+                && self.civilian_threat_owner(g, pid, unit.owner)
                 && (g.players[unit.owner].is_barbarian
                     || (g.rules.units[unit.kind].class == "military"
                         && g.rules.units[unit.kind].domain.as_deref() != Some("air")))

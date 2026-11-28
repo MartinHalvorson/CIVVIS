@@ -805,11 +805,15 @@ impl AdvancedAi {
         });
         let mut risk = 0.0;
         for unit in g.units.values() {
-            if unit.owner == pid
-                || !g.sees(visible, unit.pos)
-                || !g.is_at_war(pid, unit.owner)
-                || !g.unit_visible_to(unit.id, pid)
-            {
+            if unit.owner == pid || !g.sees(visible, unit.pos) {
+                continue;
+            }
+            // `person-units-threaten-civilians`: a person's soldier counts at
+            // any war state, priced at capture reach below. Off, exactly
+            // `is_at_war`. See `advanced/person_units_threaten_civilians.rs`.
+            let at_war = g.is_at_war(pid, unit.owner);
+            let threat = at_war || self.person_threatens_civilians(g, pid, unit.owner);
+            if !threat || !g.unit_visible_to(unit.id, pid) {
                 continue;
             }
             let spec = &g.rules.units[unit.kind];
@@ -838,7 +842,7 @@ impl AdvancedAi {
             // the tile next turn takes the civilian whatever its range, so it
             // is priced at the capture tier; one tile beyond its movement it
             // is a threat to the turn after, the approach tier.
-            if civilian_mover && domain != Some("sea") {
+            if (civilian_mover || !at_war) && domain != Some("sea") {
                 let capture_reach = spec.moves.ceil() as i32;
                 if distance <= capture_reach {
                     risk += 34.0 + strength() * 0.45;

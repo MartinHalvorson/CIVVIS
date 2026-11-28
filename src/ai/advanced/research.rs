@@ -426,6 +426,10 @@ impl AdvancedAi {
             );
             let every_lane_campus_goal = self.every_lane_campus_unlock_goal(g, pid);
             let science_writing_goal = self.science_writing_before_the_luxury_goal(g, pid);
+            // `science-seat-writes-first`: Writing once a Science seat knows two
+            // technologies. `None` with the gene off. See
+            // `advanced/science_seat_writes_first.rs`.
+            let science_writes_first_goal = self.science_seat_writes_first_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let endgame_research_preempts_wartime =
                 self.science_endgame_research_preempts_wartime(g, pid, endgame_goal);
@@ -720,6 +724,7 @@ impl AdvancedAi {
                 // `advanced/unique_unit_closes_the_age.rs`.
                 _ if unique_unit_age_goal.is_some() => unique_unit_age_goal.as_deref(),
                 _ if science_writing_goal.is_some() => science_writing_goal,
+                _ if science_writes_first_goal.is_some() => science_writes_first_goal,
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal
                 }
@@ -1133,6 +1138,14 @@ impl AdvancedAi {
                                 format!(
                                     "the {step} step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
+                                )
+                            } else if science_writing_goal.is_none()
+                                && science_writes_first_goal == Some(goal)
+                            {
+                                format!(
+                                    "science-seat-writes-first: the {step} step toward {}, the Campus and Library unlock, now that the seat knows {} techs",
+                                    plain(goal),
+                                    g.players[pid].techs.len()
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
