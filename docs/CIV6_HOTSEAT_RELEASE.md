@@ -221,6 +221,7 @@ on a runner with no game.
 | Esc on the cover; the cover lifting from up when the harness stops or dies; the stall stand-aside timers | tests only (`hotseat_cover_test.lua`, `harness_gate_test.lua`) | tests only |
 | the wait bar and its time left | the bar **seen live** (`smoke-6p-20261128T0244Zb`, `hotseat-20261128T031456Z`); the per-seat countdown tests and replay only (`hotseat_cover_wait_test.lua` replays that live game) | **unmeasured** |
 | the cover quiet while CIVVIS plays and the volumes back on the person's turn | the records fire live; silence itself is not measurable from the log (`Options.GetAudioOption` reads the saved volume) and no person has confirmed it yet | tests only |
+| a CIVVIS turn's status lines and emergency screen not left on screen for the person's turn | tests only (`hotseat_cover_test.lua` 10) | tests only |
 | a CIVVIS seat's Historic Moments and boost popups closed under the cover, not kept for the person's turn | tests only (`hotseat_cover_queue_test.lua` 2b); the fault itself was seen live (`hotseat-20261128T031456Z`) | tests only |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
 | a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |

@@ -580,7 +580,18 @@ them off, and no other install carries them):
   in `CivvisControlAutoClose.lua`). The cover lifts on that press, which the
   shipped screen announces (`LuaEvents.PlayerChange_Close`, PlayerChange.lua:59),
   after the camera and zoom go back where the person ended their last turn
-  and another seat's selection is dropped.
+  and another seat's selection is dropped. As their turn begins (still under
+  the cover) two things a CIVVIS turn leaves are cleared: the status lines on
+  screen (Panels/StatusMessagePanel.lua drops gossip at a seat's end of turn,
+  :317-320, but keeps combat and other plain lines their full 7 s, :10/:254,
+  and rollover gossip has no end of turn after it), which are hidden; and an
+  emergency screen (XP2 WorldCrisisPopup.lua, raised for whoever is local,
+  :43-45, queued at :221, not a screen the closer serves) queued since the
+  person's turn ended, which is taken off the queue: it opened on their turn
+  with the CIVVIS seat's view, and its OK accepted the emergency for them
+  (:287-292). Their own emergencies still open from their notification (:404).
+  One `hotseat_left_behind` record says what went. ⚠ Tests only
+  (`hotseat_cover_test.lua` 10).
 
 ⚠ **A popup queued under a higher one is held hidden, and a hidden context
 does not tick.** That is why the shipped hotseat background asks for
