@@ -1594,6 +1594,62 @@ UnitManager.GetMoveToPathEx = nil
 Map.GetPlotIndex = nil
 host.paths = nil
 
+-- 12. Hotseat, `StalledOperationRelease` on: a pathed walk the host dropped
+-- (its unit awake on its origin, NOT in an operation, movement intact) takes
+-- the same early no-op at the probe tick. hotseat-20261128T045523Z p4 t32:
+-- a Scout's MOVE_TO onto a hostile-held plot, path 4 plots, awake with 3
+-- moves, held to the 30-tick grace (6.9 s). A unit that has spent movement,
+-- one in an operation, one whose activity cannot be read, and the same walk
+-- outside hotseat or without the switch all wait as before.
+local function awakeRun(config)
+	CivvisControlConfig = config
+	local chunk = assert(loadfile(here .. "/CivvisControlAgent.lua"))
+	local ok, err = pcall(chunk)
+	assert(ok, "CivvisControlAgent.lua raised on reload: " .. tostring(err))
+	local apply, q = rawget(_G, "CivvisApplyOrders"), rawget(_G, "CivvisQueue")
+	rawget(_G, "CivvisResolveActions")()
+	host.units, host.ops, host.commands, host.refuse, host.contacts = {}, {}, {}, {}, {}
+	host.governor_requests, host.cities = {}, {}
+	Game.GetLocalPlayer = function() return PID end
+	q.reset(7)
+	LOG = {}
+	host.paths = { [170] = 4, [171] = 4, [172] = 4, [173] = 4 }
+	Map.GetPlotIndex = function(x, y) return y * 100 + x end
+	UnitManager.GetMoveToPathEx = function(unit)
+		local n = host.paths[unit.GetID()];
+		if n == nil then return nil end
+		local plots = {};
+		for i = 1, n do plots[i] = i end
+		return { plots = plots, turns = { 0, 1 } };
+	end
+	host.units[170] = { id = 170, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3, activity = "awake" }
+	host.units[171] = { id = 171, kind = "UNIT_SCOUT", x = 4, y = 4, moves = 3, activity = "awake" }
+	host.units[172] = { id = 172, kind = "UNIT_SCOUT", x = 7, y = 7, moves = 3 }
+	apply(player, PID, 7, { row(170, "MOVE_TO", 2, 1), row(171, "MOVE_TO", 5, 4), row(172, "MOVE_TO", 8, 7) })
+	-- 171 has spent a move since its order: it is walking, not dropped.
+	host.units[171].moves = 2
+	for _ = 1, 7 do q.drain(player, PID, 7) end
+	local before = q.pending[170] ~= nil
+	q.drain(player, PID, 7)
+	local out = { before = before, after = q.pending[170] ~= nil, spent = q.pending[171] ~= nil,
+		unread = q.pending[172] ~= nil, noop = lastEvent("move_noop") or "", probe = lastEvent("stall_probe") or "" }
+	UnitManager.GetMoveToPathEx, Map.GetPlotIndex, host.paths = nil, nil, nil
+	return out
+end
+local awake = awakeRun({ Hotseat = true, StalledOperationRelease = true })
+check("awake: nothing answered before the probe tick", awake.before, true)
+check("awake: the dropped walk is answered at the probe tick", awake.after, false)
+check("awake: with the no-op for that unit, at tick 8",
+	awake.noop:find('"unit":170', 1, true) ~= nil and awake.noop:find('"ticks":8', 1, true) ~= nil, true)
+check("awake: its probe says released and awake",
+	awake.probe:find('"released":true', 1, true) ~= nil and awake.probe:find('"awake":true', 1, true) ~= nil, true)
+check("awake: a unit that spent a move is still waited for", awake.spent, true)
+check("awake: an activity that cannot be read decides nothing", awake.unread, true)
+local ladder = awakeRun({ StalledOperationRelease = true })
+check("awake, outside hotseat (the ladder): still waits for the grace", ladder.after, true)
+local stock = awakeRun({ Hotseat = true })
+check("awake, hotseat without the switch: still waits for the grace", stock.after, true)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

@@ -23458,6 +23458,32 @@ CivvisQueue.drain = function(player, pid, turn)
 							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
 							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
 							released = release });
+					-- ★ HOTSEAT: A WALK THE HOST DROPPED IS ANSWERED AT THE PROBE TOO.
+					-- The owner's game hotseat-20261128T045523Z, p4 turn 32: a Scout's
+					-- frame-1 MOVE_TO onto a plot a hostile unit held was accepted,
+					-- and the Scout stood on its origin, `awake` (NOT in an
+					-- operation), all three moves left, its path four plots that
+					-- reach the plot, until the 30-tick grace's `move_noop`
+					-- (`hostile_on_plot`): 6.9 s of the person's wait for an answer
+					-- the probe tick could give. Not in an operation, the request is
+					-- gone (G113: 464 of 525 such no-ops sat awake or sentry; a
+					-- MOVE_TO the host takes runs as ACTIVITY_OPERATION), and nothing
+					-- has stepped or spent a move: the same early no-op as an
+					-- unpathed walk, with the same switch the ladder's stalled-
+					-- operation release has, in a hotseat game only.
+					elseif probeTick and not unpathed and not spentNow and cfg.Hotseat == true
+							and cfg.StalledOperationRelease == true and attempt ~= nil and attempt.turn == turn
+							and attempt.moves ~= nil and moves ~= nil and moves >= attempt.moves
+							and ActivityTypes.ACTIVITY_OPERATION ~= nil
+							and try(function()
+								local activity = UnitManager.GetActivityType(unit);
+								return activity ~= nil and activity ~= ActivityTypes.ACTIVITY_OPERATION;
+							end, false) == true then
+						unpathed = true;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = true, awake = true });
 					end
 				end
 				if entry.stall_probe ~= nil and not entry.stall_resolved and entry.origin ~= nil then
