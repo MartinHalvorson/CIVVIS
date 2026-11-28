@@ -257,6 +257,12 @@ AGENT_HANDLES = {"jack": "JackOfAllTrades", "holy": "HolyRoller", "tourist": "To
 #: `BUSES`); the first is the default.
 COVER_SOUNDS = ("music", "silent", "all")
 COVER_SOUND = COVER_SOUNDS[0]
+#: `--fast-animations [N]`: the engine's debug timescale for the CIVVIS seats'
+#: covered turns. The default is the ladder's (`deploy/live-mod-arms.txt`
+#: `debug-timescale-3`); the mod takes 1 < N <= 4 (`CivvisClock.fastWant`), the
+#: scales the ladder has played (`civ6_play.TREE_MOD_ARMS`).
+FAST_ANIMATIONS = 3.0
+FAST_ANIMATIONS_MAX = 4.0
 #: `--agents strongest`: the roster agent the ELO Rankings page rates highest.
 STRONGEST = "strongest"
 PUBLISHED_ELO = HERE.parent / "data" / "strategy_elo.json"
@@ -471,9 +477,35 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         "DebugTimeScaleAB": None,
         "VSyncABTurns": None,
     })
+    # `--fast-animations` (off unless asked; tests only so far): the CIVVIS
+    # seats' turns under the cover at the console's `timescale N`, every
+    # person's turn at 1 (CivvisControlAgent.lua `CivvisClock.fastApply` and
+    # its resets; the cover and the HUD guard it). Only over a person's covered
+    # seat, and set only when asked, so every other install is as it was.
+    fast = getattr(args, "fast_animations", None)
+    if fast and config["HotseatCover"]:
+        config.update({
+            "HotseatFastAnimations": float(fast),
+            # `--fast-animations-rollover`: through the game's own processing
+            # after the last CIVVIS seat too, until the person's turn begins.
+            "HotseatFastRollover": bool(getattr(args, "fast_animations_rollover", False)),
+        })
     if args.auto_human:
         config["HotseatNames"][str(HUMAN_SEAT)] = "Test stub"
     return config
+
+
+def fast_animations_note(args: argparse.Namespace, config: dict) -> str | None:
+    """What the log says about `--fast-animations`, when it was asked for."""
+    if getattr(args, "fast_animations", None) is None:
+        return None
+    if not config.get("HotseatFastAnimations"):
+        return ("--fast-animations needs the cover over your own seat (not with --no-cover, "
+                "--auto-human stub or an unattended table): off for this game")
+    rollover = (", and through the game's own turn processing after them"
+                if config.get("HotseatFastRollover") else "")
+    return (f"fast animations: the CIVVIS seats' turns under the cover run at timescale "
+            f"{config['HotseatFastAnimations']:g}{rollover}; your own turn at 1 (tests only so far)")
 
 
 # --------------------------------------------------------------- the decider
@@ -727,7 +759,7 @@ def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
-                  treatments: list[str] | None = None) -> list[str]:
+                  treatments: list[str] | None = None, poll_s: float | None = None) -> list[str]:
     """One jack seat's decision worker: the live seat's brain, pinned binary,
     with the live genes it is armed with (`--with`, as the ladder's
     `civ6_play.civvis_brain_command` passes them).
@@ -746,6 +778,9 @@ def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
                "--seconds", str(14 * 24 * 3600)]
     for tag in treatments or []:
         command += ["--with", tag]
+    # `--fast-turns`: the worker reads its journal every `FAST_POLL_S`.
+    if poll_s:
+        command += ["--poll-seconds", f"{poll_s:g}"]
     return command
 
 
@@ -820,10 +855,12 @@ class Brains:
     """One `civ6_brain.py` per jack seat, restarted if one dies."""
 
     def __init__(self, run_dir: Path, tag: str, seats: list[int], orders_db: Path,
-                 binary: Path, victory: str, log: Log, treatments: list[str] | None = None):
+                 binary: Path, victory: str, log: Log, treatments: list[str] | None = None,
+                 poll_s: float | None = None):
         self.run_dir, self.tag, self.seats = run_dir, tag, seats
         self.orders_db, self.binary, self.victory, self.log = orders_db, binary, victory, log
         self.treatments = list(treatments or [])
+        self.poll_s = poll_s
         self.procs: dict[int, subprocess.Popen] = {}
         self.restarts: dict[int, int] = {seat: 0 for seat in seats}
         self.retry_at: dict[int, float] = {}
@@ -844,7 +881,7 @@ class Brains:
         self.procs[seat] = subprocess.Popen(
             brain_command(seat_dir, self.orders_db, self.binary,
                           self.victory[seat] if isinstance(self.victory, dict) else self.victory,
-                          self.treatments),
+                          self.treatments, self.poll_s),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
             **worker_session())
         out.close()
@@ -1974,6 +2011,23 @@ class Journal:
 #: game's log is relayed to the decision workers in between (`relay_for`).
 PASS_S = 0.5
 RELAY_S = 0.02
+#: `--fast-turns`: the relay's and each worker's read every 10 ms instead of 20
+#: and 25. A board waits half a read on average at each, about 10 ms in all a
+#: board, a dozen boards a round at turn 30 (hotseat-20261128T045523Z: one
+#: opening and 1.4 extra frames per seat-turn, five seats). Each read is one
+#: stat-and-read of a log's new bytes.
+FAST_RELAY_S = 0.01
+FAST_POLL_S = 0.01
+
+
+def relay_seconds(args: argparse.Namespace) -> float:
+    """How often this table's log is relayed to its workers."""
+    return FAST_RELAY_S if getattr(args, "fast_turns", False) else RELAY_S
+
+
+def poll_seconds(args: argparse.Namespace) -> float | None:
+    """How often each worker reads its journal; None: the worker's own 25 ms."""
+    return FAST_POLL_S if getattr(args, "fast_turns", False) else None
 
 
 def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
@@ -3496,6 +3550,9 @@ def run_manual(args: argparse.Namespace) -> int:
         live_genome(args, binary, run_dir, log)
         civ_at_install = set(env.game_pids())
         config = manual_lobby_config(args, run_dir, orders_db)
+        note = fast_animations_note(args, config)
+        if note:
+            log(note)
         reset_orders_db(orders_db)
         import civ6_brain  # noqa: PLC0415 - screen-free here: the guard is engaged
         civ6_brain.connect(orders_db).close()
@@ -3573,6 +3630,7 @@ def run_manual(args: argparse.Namespace) -> int:
                              if agents else args.victory)
                     brains = Brains(run_dir, args.tag, civvis, orders_db, binary, lanes, log,
                                     treatments=args.treatments)
+                    brains.poll_s = poll_seconds(args)
                     brains.start_all()
                     log(f"CIVVIS plays {_rows(civvis)}"
                         + (" and the test stub row 1" if stub else "")
@@ -3621,7 +3679,7 @@ def run_manual(args: argparse.Namespace) -> int:
                 break
             if brains is not None and monitor.stalled(args.stall_seconds):
                 manual_stall_note(monitor, log, now)
-            relay_for(bridges)
+            relay_for(bridges, read_s=relay_seconds(args))
     except Stop as stop:
         if stop_reason == "finished":
             stop_reason = f"stopped ({stop})"
@@ -3745,8 +3803,25 @@ def main(argv: list[str] | None = None) -> int:
                          "and yours) is pressed on its first frame instead of 0.3 s in. It "
                          "also has the CIVVIS seats look for their orders every 20 ms, which "
                          "the default `--genome live` already does (its mod arms' poll-20ms), "
-                         "so that part adds something only with `--genome stock`. Played in "
-                         "live games since 2026-11-28")
+                         "so that part adds something only with `--genome stock`. And each "
+                         "board reaches its seat's worker sooner: the game's log is relayed, "
+                         "and read by every worker, every 10 ms instead of 20 and 25, and "
+                         "the HUD offers the orders peek every 20 ms on average rather than "
+                         "every other frame. Played in live games since 2026-11-28")
+    ap.add_argument("--fast-animations", nargs="?", type=float, const=FAST_ANIMATIONS,
+                    default=None, metavar="N",
+                    help="off by default: while the cover is up over the CIVVIS seats' turns "
+                         f"the game runs N times faster (default {FAST_ANIMATIONS:g}, the "
+                         "ladder's own debug timescale; above 1, at most "
+                         f"{FAST_ANIMATIONS_MAX:g}): their fights, walks and the waits on "
+                         "them. Your own turn always runs at normal speed: the scale is put "
+                         "back to 1 before it is shown, and if that ever fails the feature "
+                         "switches itself off for the rest of the game. Needs the cover; "
+                         "give it again with --resume. Tests only so far")
+    ap.add_argument("--fast-animations-rollover", action="store_true",
+                    help="with --fast-animations: also through the game's own turn "
+                         "processing after the last CIVVIS seat (barbarians, city-states, "
+                         "the autosave), until your turn begins")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")
@@ -3823,6 +3898,13 @@ def main(argv: list[str] | None = None) -> int:
                                                    ("--quit-game", args.quit_game)) if on)
         print(f"{given} go{'es' if ' and ' not in given else ''} with --stop: "
               f"`--stop {given}`", file=sys.stderr)
+        return 2
+    if args.fast_animations is not None and not 1 < args.fast_animations <= FAST_ANIMATIONS_MAX:
+        print(f"--fast-animations takes a scale above 1 and at most {FAST_ANIMATIONS_MAX:g} "
+              f"(default {FAST_ANIMATIONS:g})", file=sys.stderr)
+        return 2
+    if args.fast_animations_rollover and args.fast_animations is None:
+        print("--fast-animations-rollover goes with --fast-animations", file=sys.stderr)
         return 2
     if args.stop:
         return stop_command(args)
@@ -3972,6 +4054,8 @@ def run(args: argparse.Namespace) -> int:
         args.cover_sound = attach_config.get("HotseatCoverSound") or "all"
         args.no_cover_timer = not attach_config.get("HotseatCoverTimer")
         args.fast_turns = attach_config.get("HotseatFastTurns") is True
+        args.fast_animations = attach_config.get("HotseatFastAnimations") or None
+        args.fast_animations_rollover = attach_config.get("HotseatFastRollover") is True
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)
@@ -4047,6 +4131,9 @@ def run(args: argparse.Namespace) -> int:
             (run_dir / TABLE).write_text(json.dumps(table_settings(args, began, resumed or None),
                                                     indent=2, sort_keys=True))
             log(f"installed the control mod for hotseat at {target}")
+            note = fast_animations_note(args, config)
+            if note:
+                log(note)
             if args.resume_save is not None:
                 staged = stage_save(args.resume_save)
                 log(f"resuming {args.resume_save} (staged as {staged.name})")
@@ -4105,6 +4192,7 @@ def run(args: argparse.Namespace) -> int:
                              daemon=True).start()
         brains = Brains(run_dir, args.tag, seats, orders_db, binary,
                         seat_lanes(args, seats), log, treatments=args.treatments)
+        brains.poll_s = poll_seconds(args)
         workers_up = handed is None
         if workers_up:
             brains.start_all()
@@ -4177,7 +4265,7 @@ def run(args: argparse.Namespace) -> int:
                 log("⚠ " + not_started_advice(run_dir, args, waited_for_game - began_waiting))
             if monitor.stalled(args.stall_seconds):
                 rescue_popup(monitor, log)
-            relay_for(bridges)
+            relay_for(bridges, read_s=relay_seconds(args))
     except Stop as stop:
         stop_reason = f"stopped ({stop})"
         log(f"stopping: {stop}")

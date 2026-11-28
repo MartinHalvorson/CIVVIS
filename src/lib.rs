@@ -113,6 +113,7 @@ pub mod specmap;
 pub mod sphere;
 pub mod strategic;
 pub mod strategies;
+pub mod trade_decider;
 pub mod trafalgar;
 pub mod validate;
 pub mod valuenet;

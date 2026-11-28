@@ -437,8 +437,10 @@ end
 -- 6b. live-6p-20261128T0405Z turn 3, as the game logged it: the stub's turn
 --     complete went out while the game was still paused (`PlayerTurnComplete
 --     ignored due to game paused.`), the UI kept it as sent, and the stub's own
---     requests stopped there. The step unreadies it where the game allows, and
---     the next pass sends it again. --------------------------------------------
+--     requests stopped there. The step sends SHIFT+ENTER's request again, and
+--     NEVER an unready, even where the game would take one: an unready of a
+--     turn the engine did take hands the turn back (live-6p-20261128T0819Zg
+--     turn 6), and a turn handed back in hotseat crashed Civ VI three times. --
 do
 	local w = world(STUB, { turn = 3 })
 	w.sent, w.canUnready = true, true
@@ -446,12 +448,14 @@ do
 	assert(w.active and w.ticks == 4 and #w.requests == 0, "the loop's requests stop at the sent flag")
 	w.second()
 	local r = w.kinds("stand_in_stuck")[1]
-	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "unready" and r.game_paused == false,
-		"the dropped turn complete is unreadied: " .. tostring(r and r.resent))
-	assert(w.actions[1].action == "ACTION_UNREADYTURN" and not w.sent)
-	assert(w.active, "an unready alone ends nothing")
-	w.second()
-	assert(not w.active and w.requests[1].reason == nil, "the next pass sends the turn again and it ends")
+	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "forced" and r.game_paused == false,
+		"the dropped turn complete is sent again: " .. tostring(r and r.resent))
+	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == "UserForced",
+		"SHIFT+ENTER's request, past the sent flag")
+	assert(not w.active, "and the turn ends")
+	for _, a in ipairs(w.actions) do assert(a.action ~= "ACTION_UNREADYTURN", "never an unready") end
+	assert(not agent:gsub("%-%-[^\n]*", ""):find("ACTION_UNREADYTURN", 1, true),
+		"no request of the agent's asks for an unready")
 	w.clean()
 end
 

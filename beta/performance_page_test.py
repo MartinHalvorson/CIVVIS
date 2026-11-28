@@ -648,6 +648,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
                 ("site-link sub-link", "../unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
+                ("site-link sub-link", "../project-chronology/", "Project Chronology"),
                 ("site-link", "../../moneyball", "CIVVIS: Moneyball"),
                 ("site-link", "../../doctor-strange", "Doctor Strange's CIVVIS"),
                 ("site-link", "../../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
@@ -686,7 +687,7 @@ class TheSiteList(unittest.TestCase):
                 re.findall(r'<a class="site-link sub-link" href="\.\./charts/([^"]+)/"[^>]*>([^<]+)</a>', menu),
                 [("ai-insights", "AI Insights"), ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                  ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance"),
-                 ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts")],
+                 ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts"), ("project-chronology", "Project Chronology")],
             )
         self.assertNotIn("Performance</a>", VIEWER)
         for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>", ">AI Insights</a>"):

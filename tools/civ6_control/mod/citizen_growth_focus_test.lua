@@ -69,6 +69,7 @@ assert(growth.request(city,false)); assert(#requests==2)
 local submissions=0
 local ending=assert(source:match("(CivvisQueue.requestEndTurn = function.-)\nlocal function tick"))
 env.CivvisQueue={noteEndTurnRequest=function() end}
+env.cfg={}  -- a single-player install: requestEndTurn's hotseat guards stay out
 env.CivvisTrade={answerOrphanSessions=function() end,holdsEndTurn=function() return false end}
 env.CivvisClock={now=function() return 5 end}
 env.UI={HasSentTurnComplete=function() return false end,RequestAction=function() submissions=submissions+1 end}

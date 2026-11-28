@@ -2538,6 +2538,11 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "          <a class=\"site-link sub-link\" href=\"../unreviewed-gen-ai-charts/\" ",
         "title=\"Charts the AI agents added on their own, kept here until they are asked for ",
         "or talked over.\">Unreviewed Gen AI Charts</a>\n",
+        // And after it (2026-11-28: "add a project chronology to charts/ at
+        // the end for now"), the project's milestones along a timeline.
+        "          <a class=\"site-link sub-link\" href=\"../project-chronology/\" ",
+        "title=\"The project&#8217;s milestones along a timeline: AI capability, ",
+        "simulator performance, new features.\">Project Chronology</a>\n",
         "        </div>\n",
     )));
     assert!(include_str!("../../beta/research.html").contains(concat!(
@@ -2885,6 +2890,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "          <a class=\"site-link sub-link\" href=\"../charts/unreviewed-gen-ai-charts/\" ",
             "title=\"Charts the AI agents added on their own, kept here until they are asked for ",
             "or talked over.\">Unreviewed Gen AI Charts</a>\n",
+            "          <a class=\"site-link sub-link\" href=\"../charts/project-chronology/\" ",
+            "title=\"The project&#8217;s milestones along a timeline: AI capability, ",
+            "simulator performance, new features.\">Project Chronology</a>\n",
             "        </div>\n",
             "      </div>\n",
             "      <a class=\"site-link\" href=\"../moneyball\" ",

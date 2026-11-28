@@ -589,10 +589,14 @@ function CivvisSeatWatch.beat(source)
 	-- game is still paused is ignored by the engine (live-6p-20261128T0405Z t3,
 	-- net_message_debug.log: `PlayerTurnComplete ignored due to game paused.`)
 	-- and `UI.HasSentTurnComplete()` keeps answering true. So once a turn has
-	-- stood its age limit, sent or not, it is asked again; a sent one is
-	-- unreadied first where the game allows (ActionPanel.lua:535-537), and the
-	-- next request sends it afresh. Within the quiet rule alone a sent turn is
-	-- still the engine's to finish.
+	-- stood its age limit, sent or not, it is asked again with SHIFT+ENTER's
+	-- request, which goes past that flag. Within the quiet rule alone a sent
+	-- turn is still the engine's to finish.
+	-- ★★ NEVER AN UNREADY. #6007 unreadied a sent turn first where the game
+	-- allowed (ActionPanel.lua:535-537 `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`).
+	-- An unready of a turn complete the engine did take hands the turn back,
+	-- and in hotseat a turn handed back begins again: three games crashed right
+	-- after one on 2026-11-28 (CivvisControlAgent.lua `CivvisQueue.unitsSettling`).
 	local forceNow = type(beat) == "number" and (s.sent ~= true or aged ~= nil)
 		and w.forces < (tonumber(cfg.SeatQuietMaxForces) or 6)
 		and (w.forced == nil or now - w.forced >= (tonumber(cfg.SeatQuietForceEvery) or 20));
@@ -607,20 +611,12 @@ function CivvisSeatWatch.beat(source)
 	-- already sent complete is the engine's to finish.
 	if not forceNow then return; end
 	w.forced, w.forces = now, w.forces + 1;
-	local unready = false;
-	if s.sent == true then
-		pcall(function() unready = Players[pid]:CanUnreadyTurn() == true; end);
-	end
 	local asked = pcall(function()
-		if unready then
-			UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);
-		else
-			UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
-		end
+		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
 	end);
 	w.report(kind .. "_end_turn", s, {
 		{ "why", why }, { "quiet", w.quiet }, { "age", w.age }, { "asked", asked },
-		{ "how", unready and "unready" or "end_turn" },
+		{ "how", s.sent == true and "resent" or "end_turn" },
 		{ "forces", w.forces }, { "source", source } });
 end
 -- A watched seat that is the local player with its turn not active: between
@@ -919,7 +915,12 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 		if abTurns > 0 then CivvisVSyncAB.frame(delta); end
 		peekElapsed = peekElapsed + delta;
 		if peekElapsed >= peekEvery then
-			peekElapsed = 0;
+			-- `HotseatFastTurns`: the remainder is kept (at most one interval), so
+			-- a 60 Hz HUD offers the peek on five frames in six, every 20 ms on
+			-- average, where starting each interval at 0 made it every second
+			-- frame (33 ms) and every board waited ~8 ms more for its answer.
+			peekElapsed = cfg.HotseatFastTurns == true
+				and math.min(peekElapsed - peekEvery, peekEvery) or 0;
 			pcall(function() LuaEvents.CivvisControlPeek(); end);
 		end
 		elapsed = elapsed + delta;

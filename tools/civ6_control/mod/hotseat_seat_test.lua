@@ -98,9 +98,13 @@ end
 local CLOCK_CALLS = { ["function"] = true, try = true, pcall = true, emit = true, tostring = true,
 	tonumber = true, ipairs = true, type = true, ["table.sort"] = true,
 	["AutoProfiler.RunCommand"] = true, ["LuaEvents.CivvisFastAnimations"] = true,
-	["Players[seat]:IsAlive"] = true }
+	["Players[seat]:IsAlive"] = true,
+	-- `fastBlocked` reads the popup queue and the person-facing harness.
+	["ContextPtr:LookUpControl"] = true, ["UIManager:IsInPopupQueue"] = true,
+	["CivvisHarness.live"] = true }
 for _, name in ipairs({ "fastWant", "shared", "follow", "fastState", "personSeat", "nextIsPerson",
-		"fastReset", "fastHeard", "fastTurnBegin", "fastTurnEnd", "fastLoaded" }) do
+		"fastReset", "fastHeard", "fastTurnBegin", "fastTurnEnd", "fastLoaded",
+		"fastQueued", "fastBlocked", "fastApply" }) do
 	local body = assert(agent:match("\nCivvisClock%." .. name .. " = function%([^)]*%)\n(.-)\nend;\n"),
 		"CivvisClock." .. name .. " is defined")
 	for call in body:gmatch("([%w_%.:%[%]]+)%(") do

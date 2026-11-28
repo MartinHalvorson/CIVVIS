@@ -411,18 +411,18 @@ class People(unittest.TestCase):
         self.assertAlmostEqual(off[0]["elo"], 1300 - 400 * math.log10(2), delta=0.1)
 
     def test_a_person_stands_in_the_player_strategies_among_the_agents(self):
-        strategies = PAGE[PAGE.index("// ---- Player strategies"):PAGE.index("// ---- Elo over time")]
-        self.assertIn('entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person" })[side] = reading(p);',
-                      strategies)
-        # Numbered with the agents (a Firaxis level is a rung, not a place), in gold.
-        self.assertIn('item.append(el("span", "rank-n", r.kind === "level" ? "" : String(++place)));', strategies)
-        self.assertIn('r.kind === "person" ? " is-person"', strategies)
-        self.assertIn(".rank-row.is-person .rank-name { color: var(--gold); }", PAGE)
-        self.assertIn("--gold:", PAGE)
-        # What their figure counts is said on the row and under the list.
-        self.assertIn('" against the Civ AI Agents in Civilization VI"', strategies)
-        self.assertIn('" against the agents in Civilization VI itself, each agent at its Elo here when the game began."',
-                      strategies)
+        # The player strategies are the one ELO Rankings table Home and
+        # Tournaments show (`beta/elo_table_test.py`): a person is read from
+        # their hot seat games in Civilization VI, numbered among the agents
+        # and the levels, and faintly blue ("dev blue").
+        table = PAGE[PAGE.index("  // elo-table: begin"):PAGE.index("  // elo-table: end")]
+        self.assertIn('entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person", cheating: 0 }).at.control[key] = reading(p);',
+                      table)
+        self.assertIn('left.append(el("td", "is-n", r.kind !== "mods" && rated(r) ? String(++place) : ""));', table)
+        self.assertIn(".elo-table tbody tr.is-person { background: color-mix(in srgb, var(--accent) 11%, transparent); }", PAGE)
+        # What their figure counts is said on the row and under the table.
+        self.assertIn('" against the Civ AI Agents in Civilization VI"', table)
+        self.assertIn('" against the agents in Civilization VI itself, each agent at its Elo when the game began."', table)
 
     def test_the_record_is_the_one_the_recorder_writes(self):
         sys.path.insert(0, str(ROOT / "tools"))
@@ -480,21 +480,32 @@ class Page(unittest.TestCase):
         self.assertIn('<h2 class="rank-title" id="elo-over-time-title">Elo over time</h2>', PAGE)
 
     def test_every_figure_is_shown_with_the_diplomatic_victory_on_and_off(self):
-        # Player strategies: a column for each, its head sorting the list.
-        # It opens sorted by Diplo off (operator 2026-11-26: "player
-        # strategies should default diplo off"), by Diplo on only while the
-        # record has no diplo-off fit.
+        # Player strategies: the one ELO Rankings table (operator 2026-11-28:
+        # "merge the home elo ranking and the elo chart together into the
+        # same elo ranking table"), drawn by its script from this page's slot,
+        # its Diplo off and Diplo on columns among the rest, opening on Diplo
+        # off (2026-11-26: "player strategies should default diplo off");
+        # `beta/elo_table_test.py` holds it.
         strategies = PAGE[PAGE.index('id="rank-strategies"'):PAGE.index('id="elo-over-time"')]
-        self.assertEqual(re.findall(r'data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', strategies),
-                         [("on", "false", "Diplo on"), ("off", "true", "Diplo off")])
-        self.assertIn('show(VIEWS.off ? "off" : "on");', PAGE)
-        self.assertNotIn('show("on");', PAGE)
-        self.assertIn("item.append(label, value(r, \"on\"), value(r, \"off\"));", PAGE)
+        self.assertIn('<div class="elo-table" hidden>', strategies)
+        self.assertIn("show(OPEN);", PAGE)
         # The graph: one reading at a time, switched over the key.
         graph = PAGE[PAGE.index('id="elo-over-time"'):PAGE.index('id="elo-legend"')]
         self.assertEqual(re.findall(r'data-diplo="(\w+)" aria-pressed="(\w+)">([^<]+)<', graph),
                          [("on", "true", "Diplo on"), ("off", "false", "Diplo off")])
         self.assertIn("const VIEWS = { on: data, off: data.off || null };", PAGE)
+
+    def test_a_fit_without_a_ladder_gives_the_stand_ins_it_rated(self):
+        # A setup's fit (`strategy_elo --setup`) keeps no ladder and seats
+        # only the stand-in at Prince, the scale's anchor: it is read there,
+        # so ELO Rankings shows Prince in that fit's column too.
+        points = [{"at": "2026-11-27T10:00:00Z", "ladder": {}, "ratings": {"civ6:prince": [1000.0, 0, ""], "jack": [1400.0, 90, ""]}}]
+        self.assertEqual(elo_page.simulator(points), [{"level": 4, "name": "Prince", "elo": 1000.0, "margin": 0}])
+        # Where a ladder is kept, it is the ladder's figure, with the rung's margin.
+        points[0]["ladder"] = {"prince": 1000.0, "deity": 1955.0}
+        points[0]["ratings"]["civ6:deity"] = [1950.0, 46, ""]
+        self.assertEqual(elo_page.simulator(points), [{"level": 8, "name": "Deity", "elo": 1955.0, "margin": 46},
+                                                      {"level": 4, "name": "Prince", "elo": 1000.0, "margin": 0}])
 
     def test_every_agents_colour_follows_the_agent(self):
         # Colour follows the entity, never its place: every agent of the
