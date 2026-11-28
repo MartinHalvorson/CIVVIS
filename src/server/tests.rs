@@ -2311,7 +2311,9 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// url for this to be of the form: civvis.ai/edge-of-tomorrow. the others
 /// can be civvis.ai/debugger and civvis.ai/doctor-strange"), where they
 /// were the viewer's address with `?mode=strange`, `?mode=play` and
-/// `?mode=tomorrow`.
+/// `?mode=tomorrow`. CIVVIS: Moneyball stands after Edge of Tomorrow since
+/// 2026-11-27 (operator: "add CIVVIS: Moneyball. This is a minigame where a
+/// user only looks at the stats and tries to play the best game").
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2322,6 +2324,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"doctor-strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"edge-of-tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"moneyballlink\" href=\"moneyball\" target=\"_top\">CIVVIS: Moneyball</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
@@ -2362,7 +2365,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // Which page it is, the address says: the head script reads the
     // simulator's page off it, or an old link's `?mode=`, and the shim, which
     // runs before it, reads the same table.
-    let table = "const SIMULATOR_PAGES = {debugger: \"play\", \"doctor-strange\": \"strange\", \"edge-of-tomorrow\": \"tomorrow\"};";
+    let table = "const SIMULATOR_PAGES = {debugger: \"play\", \"doctor-strange\": \"strange\", \"edge-of-tomorrow\": \"tomorrow\", moneyball: \"moneyball\"};";
     assert!(EMBEDDED_INDEX.contains(table));
     assert!(include_str!("../../beta/shim.js").contains(table));
     assert!(include_str!("../../beta/_worker.js").contains(table));
@@ -2452,9 +2455,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // hides one any more.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  body.watching-sim #watchlink,\n",
-        "  html.seat-known:not(.strange):not(.tomorrow) body:not(.watching-sim) #playlink,\n",
+        "  html.seat-known:not(.strange):not(.tomorrow):not(.moneyball) body:not(.watching-sim) #playlink,\n",
         "  html.seat-known.strange body:not(.watching-sim) #strangelink,\n",
-        "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink {\n",
+        "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink,\n",
+        "  html.seat-known.moneyball body:not(.watching-sim) #moneyballlink {\n",
         "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n",
         "  }",
     )));
@@ -2643,7 +2647,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // a row of its own, AI Debugger and Civ 6 keep theirs, and Edge of
     // Tomorrow has one between those two.
     assert!(EMBEDDED_INDEX.contains(
-        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #moneyballlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
     ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
@@ -12242,7 +12246,12 @@ fn native_channel_routes_to_the_embedded_page() {
 /// civvis.ai/doctor-strange"), on a desktop build as on the site.
 #[test]
 fn the_simulators_pages_route_to_the_embedded_page() {
-    for page in ["/debugger", "/doctor-strange", "/edge-of-tomorrow"] {
+    for page in [
+        "/debugger",
+        "/doctor-strange",
+        "/edge-of-tomorrow",
+        "/moneyball",
+    ] {
         assert!(viewer_path(page), "{page} is not the viewer");
     }
     assert!(viewer_path(request_path("/edge-of-tomorrow?instance=9232")));

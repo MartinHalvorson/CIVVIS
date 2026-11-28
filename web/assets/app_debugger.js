@@ -90,6 +90,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar[hidden], #debugbar [hidden] { display: none !important; }
   /* Edge of Tomorrow has a bar of its own and none of the debugger's tools. */
   html.tomorrow #debugbar { display: none !important; }
+  html.moneyball #debugbar { display: none !important; }
   /* While the screen is split the box stays up, over the two halves, and has
      the window's whole width: the halves cover the left panel. */
   html.dbg-split-open #debugbar { z-index: 100001; left: 0; }
@@ -2359,7 +2360,7 @@ function debugMapLeft() {
 // shows it (`html.tomorrow #debugbar`).
 function debugBarUnseen() {
   const page = document.documentElement.classList;
-  return page.contains("strange-pane") || page.contains("tomorrow") || (page.contains("strange") && debugSplit !== null);
+  return page.contains("strange-pane") || page.contains("tomorrow") || page.contains("moneyball") || (page.contains("strange") && debugSplit !== null);
 }
 function debugDock(bar) {
   if (debugBarUnseen()) return;
@@ -5379,12 +5380,20 @@ if (TOMORROW) {
   document.documentElement.classList.add("tomorrow");
   SOLO_UI = true;
 }
+// Whether this page is CIVVIS: Moneyball (`/moneyball`, the last section of
+// this file): the seat is played by the player strategy the person picks, a
+// stretch of turns at a time, by its numbers alone.
+const MONEYBALL = (() => {
+  try { return DEBUG_PANE === null && window.CIVVIS_PAGE_MODE === "moneyball"; }
+  catch (_) { return false; }
+})();
+if (MONEYBALL) document.documentElement.classList.add("moneyball");
 // In Edge of Tomorrow the seat's only decisions are Auto-play and the jump
 // (operator, 2026-11-26: "a player's only controls are the auto play stuff
 // and the jump back / wake here"): the page sends no action, citizen or
 // focus of its own for the seat. Auto-play, Jump back and Checkpoint here go to the
 // engine by their own routes.
-window.civvisSeatHandsOff = TOMORROW;
+window.civvisSeatHandsOff = TOMORROW || MONEYBALL;
 // And it shows the seat's research box (governors, research, civic,
 // government and policies; `liveTrackerShown` in app.js), as the Debugger
 // view does, and opens on the standings and the victory tracker.
@@ -9734,4 +9743,551 @@ if (TOMORROW) {
     return Math.ceil(count.getBoundingClientRect().bottom - box.top + 8 + hud.getBoundingClientRect().height - box.height);
   };
   if (state) { tomorrowWatch(); tomorrowDraw(); tomorrowWords(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CIVVIS: Moneyball
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Operator 2026-11-27: "add CIVVIS: Moneyball. This is a minigame where a
+// user only looks at the stats and tries to play the best game. WE can have a
+// default set of stats but users should get to see there own. User
+// essentially has N columns, each with a different player strategy simulated
+// out N turns. rows are different stats. cities, mil strength, food,
+// happiness, hous, prod, science yield, culture yield, etc. User selects how
+// many turns out they want to skip at a time (default can be 10). We can also
+// estimate how long the game will go (given the strategies, how long do we
+// think the game will go)? How many guesses we expect a person to make. if
+// game 200 turns and increment 10, then 20 guesses. we can highlight top in
+// each row. player strategy should be the top strategies but randomized on
+// screen. user can chose a row to sort by though if they want."
+//
+// `/moneyball` is a played game whose seat is played, a stretch of turns at a
+// time, by the player strategy the person picks, and they pick it by its
+// numbers alone. Over the map stands a board: a column for each of the top
+// rated player strategies, in an order drawn afresh each time and named only
+// by a letter, each played out that stretch of turns on a copy of the world
+// (the copies Autosearch plays on, `POST /forks`), and a row for each figure
+// of how the seat stands at the end of it (`obs::standing`). The best of each
+// row is lit, and a row's name sorts the columns by it. Picking a column
+// plays that strategy those turns on the world itself (`debugPlayPlan`), which
+// comes out as its column said, the engine being deterministic, and the board
+// is dealt again from there.
+//
+// Each copy then plays its strategy on to the end of the game, without
+// keeping its turns (`foresee`), and where they end says how long the game
+// will likely go, and so how many picks are left.
+//
+// Nothing here is the engine's but the copies and their answers, and what
+// the board holds is gone with the page.
+
+// The figures a row can show: the key the person's choice is kept under, its
+// name, how it reads off a seat's standing, whether it is shown before the
+// person chooses, and what it is.
+const MONEYBALL_ROWS = [
+  ["score", "Score", seat => seat.score, true, "The game's score"],
+  ["cities", "Cities", seat => seat.cities, true, "Cities held"],
+  ["population", "Population", seat => seat.population, true, "Citizens in every city together"],
+  ["military", "Military strength", seat => seat.military, true, "The army's strength, as the standings show it"],
+  ["food", "Food", seat => seat.yields && seat.yields.food, true, "Food a turn"],
+  ["amenities", "Happiness", seat => seat.amenities, true, "Amenities over what a city needs, the average of the cities"],
+  ["housing", "Housing", seat => seat.housing, true, "Housing to spare, the average of the cities"],
+  ["production", "Production", seat => seat.yields && seat.yields.production, true, "Production a turn"],
+  ["science", "Science", seat => seat.yields && seat.yields.science, true, "Science a turn"],
+  ["culture", "Culture", seat => seat.yields && seat.yields.culture, true, "Culture a turn"],
+  ["gold", "Gold", seat => seat.gold_per_turn, true, "Gold a turn, after upkeep"],
+  ["faith", "Faith", seat => seat.yields && seat.yields.faith, false, "Faith a turn"],
+  ["food_surplus", "Food surplus", seat => seat.food_surplus, false, "Food a city grows on, after its citizens eat, the average of the cities"],
+  ["loyalty", "Loyalty", seat => seat.loyalty, false, "Loyalty a turn, the average of the cities"],
+  ["techs", "Techs", seat => seat.techs, false, "Technologies researched"],
+  ["civics", "Civics", seat => seat.civics, false, "Civics adopted"],
+  ["tourism", "Tourism", seat => seat.tourism, false, "Tourism earned over the game"],
+];
+// How many turns a pick plays, and how many columns there are to pick from.
+const MONEYBALL_TURNS = [5, 10, 20, 25, 50];
+const MONEYBALL_COLUMNS = [3, 4, 6, 8];
+const MONEYBALL_LETTERS = "ABCDEFGH";
+// A copy plays on to the end of the game this many turns at a time, so a
+// pick made meanwhile waits no longer than one stretch of it.
+const MONEYBALL_SIGHT_TURNS = 25;
+const MONEYBALL_SAVE = "civvis-moneyball-v1";
+
+const moneyball = {
+  // What the person chose: turns a pick, columns, the rows shown, and
+  // whether the strategies' names are shown.
+  set: (() => {
+    const kept = {turns: 10, columns: 6, rows: MONEYBALL_ROWS.filter(row => row[3]).map(row => row[0]), names: false};
+    try {
+      const saved = JSON.parse(localStorage.getItem(MONEYBALL_SAVE) || "null");
+      if (saved && MONEYBALL_TURNS.includes(saved.turns)) kept.turns = saved.turns;
+      if (saved && MONEYBALL_COLUMNS.includes(saved.columns)) kept.columns = saved.columns;
+      if (saved && Array.isArray(saved.rows)) kept.rows = saved.rows.filter(key => MONEYBALL_ROWS.some(row => row[0] === key));
+      if (saved && typeof saved.names === "boolean") kept.names = saved.names;
+    } catch (_) { /* the stock choice */ }
+    return kept;
+  })(),
+  // The deal on the board: the world it was dealt from (its seed and turn),
+  // the seat as it stands there, and a column for each strategy.
+  dealt: null,
+  // A count that grows with every deal: an answer to an older one is let go.
+  deal: 0,
+  // The row the columns are sorted by, or null for the order they were drawn.
+  sort: null,
+  // The picks made, oldest first: {from, to, letter, name}.
+  picks: [],
+  // A pick being played on the world.
+  playing: false,
+  // The board shows the map instead.
+  away: false,
+  said: "",
+};
+let moneyballBoard = null;
+
+const MONEYBALL_STYLE = `
+  /* The board stands over the map (operator 2026-11-27: "a minigame where a
+     user only looks at the stats"), from the map's left edge to the
+     window's right. */
+  #moneyball {
+    position: fixed; z-index: 9000; top: 0; right: 0; bottom: 0; left: var(--mb-left, 0px);
+    display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 16px; overflow: auto;
+    background: radial-gradient(120% 90% at 50% 0%, #143525 0%, #0b1a13 55%, #08110d 100%);
+    color: #e9f1e6; font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  #moneyball[hidden] { display: none; }
+  #moneyball.is-away { bottom: auto; overflow: visible; background: #0b1a13ee; border-bottom: 1px solid #2f8a4a; }
+  #moneyball.is-away .mb-body { display: none; }
+  .mb-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+  .mb-title { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: 0.04em; color: #f3f6ee; }
+  .mb-title i { font-style: normal; color: #8fe07a; }
+  .mb-turn { color: #cfe6c4; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .mb-turn b { color: #fff; }
+  .mb-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-left: auto; }
+  .mb-tools label { display: inline-flex; align-items: center; gap: 5px; color: #b7cdb0; font-size: 12px; }
+  .mb-tools select, .mb-tools button, .mb-pick, .mb-rows summary {
+    font: inherit; font-size: 12px; color: #f3f6ee; background: #16301f; border: 1px solid #2f6a43; border-radius: 4px; padding: 3px 8px; cursor: pointer;
+  }
+  .mb-tools button[aria-pressed="true"] { background: #2f8a4a; border-color: #8fe07a; }
+  .mb-rows { position: relative; }
+  .mb-rows summary { list-style: none; }
+  .mb-rows summary::-webkit-details-marker { display: none; }
+  .mb-rows[open] .mb-row-list { display: grid; }
+  .mb-row-list {
+    display: none; position: absolute; z-index: 2; right: 0; top: calc(100% + 4px); grid-template-columns: repeat(2, max-content); gap: 4px 14px;
+    padding: 8px 10px; background: #0d2017; border: 1px solid #2f6a43; border-radius: 6px; box-shadow: 0 8px 24px #000a;
+  }
+  .mb-row-list label { color: #e9f1e6; }
+  .mb-estimate { margin: 0; color: #cfe6c4; font-size: 13px; }
+  .mb-estimate b { color: #fff; font-variant-numeric: tabular-nums; }
+  .mb-said { margin: 0; min-height: 1.3em; color: #ffd27a; font-size: 12.5px; }
+  .mb-table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; }
+  .mb-table th, .mb-table td { padding: 6px 10px; border-bottom: 1px solid #1f3d2b; text-align: right; white-space: nowrap; }
+  .mb-table thead th { position: sticky; top: 0; z-index: 1; background: #0e2218; color: #cfe6c4; font-weight: 700; vertical-align: bottom; }
+  .mb-table thead th small { display: block; color: #8fb38a; font-size: 11px; font-weight: 500; }
+  .mb-table tbody th { text-align: left; font-weight: 600; }
+  .mb-table .mb-sort { font: inherit; color: #e9f1e6; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  .mb-table .mb-sort:hover, .mb-table .mb-sort:focus-visible { color: #8fe07a; outline: none; text-decoration: underline; }
+  .mb-table .mb-sort[aria-sort="descending"] { color: #8fe07a; }
+  .mb-table .mb-sort[aria-sort="descending"]::after { content: " \\25BE"; }
+  .mb-table .mb-now { color: #9fb99a; background: #0c1c14; }
+  .mb-table td.is-top { color: #10200f; background: linear-gradient(180deg, #a8f08f, #6fcf62); font-weight: 800; border-radius: 3px; }
+  .mb-table td small { margin-left: 5px; font-size: 11px; color: #8fb38a; }
+  .mb-table td.is-top small { color: #1f4a1c; }
+  .mb-table td.is-waiting { color: #5e7a59; }
+  .mb-table tr.mb-ends td, .mb-table tr.mb-ends th { color: #b7cdb0; font-size: 12px; }
+  .mb-table tfoot td { border-bottom: 0; padding-top: 10px; }
+  .mb-pick { width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 700; background: #2f8a4a; border-color: #8fe07a; }
+  .mb-pick:hover:not(:disabled) { background: #38a057; }
+  .mb-pick:disabled { cursor: default; opacity: 0.45; }
+  .mb-picks { margin: 0; padding: 0 0 0 18px; color: #9fb99a; font-size: 12px; columns: 2 280px; }
+  .mb-over { margin: 0; padding: 10px 12px; border: 1px solid #8fe07a; border-radius: 6px; background: #12301f; color: #f3f6ee; font-size: 14px; }
+  .mb-over button { margin-left: 10px; }
+  @media (max-width: 760px) {
+    #moneyball { padding: 10px; }
+    .mb-tools { margin-left: 0; }
+    .mb-table th, .mb-table td { padding: 5px 6px; }
+  }
+`;
+
+function moneyballSave() {
+  try { localStorage.setItem(MONEYBALL_SAVE, JSON.stringify(moneyball.set)); } catch (_) { /* not kept */ }
+}
+function moneyballIdle() {
+  return !!debugTimeline() && !debugBusy && !debugRunning && !autoplaying && !turnAdvancePending && !moneyball.playing;
+}
+// The top rated player strategies the page offers, as many as there are
+// columns, best first (`RULES.strategies`, which the picker lists by Elo).
+// With nothing rated, those the page offers in Doctor Strange's order.
+function moneyballStrategies(count) {
+  const offered = strangeAgents();
+  const roster = typeof RULES !== "undefined" && RULES && Array.isArray(RULES.strategies) ? RULES.strategies : [];
+  const rated = roster.filter(entry => entry && offered.includes(entry.name) && Number.isFinite(Number(entry.elo)))
+    .sort((one, other) => Number(other.elo) - Number(one.elo)).map(entry => entry.name);
+  const rest = [...STRANGE_RIVALS, ...offered].filter(name => offered.includes(name) && !rated.includes(name));
+  return [...new Set([...rated, ...rest])].slice(0, count);
+}
+// The order the columns are drawn in: shuffled afresh each deal, so a column
+// is not known by where it stands.
+function moneyballShuffled(count) {
+  const order = Array.from({length: count}, (_, at) => at);
+  for (let at = order.length - 1; at > 0; at -= 1) {
+    const other = Math.floor(Math.random() * (at + 1));
+    [order[at], order[other]] = [order[other], order[at]];
+  }
+  return order;
+}
+function moneyballSay(text) {
+  moneyball.said = text || "";
+  moneyballDraw();
+}
+// One request to one copy, answered lean. An answer to a deal that has been
+// replaced is not wanted.
+async function moneyballAsk(deal, path, body) {
+  const answer = await debugSearchPost(path, {...body, lean: true});
+  if (deal !== moneyball.deal) throw new Error(MONEYBALL_GONE);
+  if (!answer) throw new Error("the engine gave no answer");
+  return answer;
+}
+const MONEYBALL_GONE = "the board was dealt again";
+
+// The board is dealt from the world as it stands: each column's strategy
+// plays the turns of a pick on a copy of the world, and then plays on to the
+// end of the game. Copies are made for as many columns as the tab has room
+// for (`tabEnginesMB`); where there are fewer, columns wait their turn.
+async function moneyballDealBoard() {
+  if (!moneyballIdle() || !state) return;
+  const deal = ++moneyball.deal;
+  const turn = state.turn, turns = moneyball.set.turns;
+  const names = moneyballStrategies(moneyball.set.columns);
+  const shuffled = moneyballShuffled(names.length);
+  moneyball.sort = null;
+  moneyball.dealt = {
+    seed: String(state.seed ?? ""), turn, turns, now: null,
+    columns: shuffled.map((which, at) => ({letter: MONEYBALL_LETTERS[at], name: names[which], seat: null, readings: [],
+      finished: false, winner: null, end: null, error: null})),
+  };
+  moneyballSay("");
+  if (!names.length) { moneyballSay("This page offers no player strategy to pick from"); return; }
+  let made;
+  try {
+    made = await debugSearchPost("/forks", {count: names.length});
+  } catch (error) {
+    made = {error: String(error.message || error)};
+  }
+  if (deal !== moneyball.deal) return;
+  if (!made || made.error || !(made.forks > 0)) {
+    moneyballSay("Moneyball plays its columns on copies of the engine, and this build could not make them" +
+      ` (${(made && made.error) || "it has no forks"}). It runs on civvis.ai, in the browser`);
+    return;
+  }
+  const queue = [...moneyball.dealt.columns];
+  const copy = async at => {
+    const path = `/debug?fork=${at + 1}`;
+    for (let column = queue.shift(); column; column = queue.shift()) await moneyballPlay(deal, path, column, turn, turns);
+  };
+  try {
+    await Promise.all(Array.from({length: Math.min(made.forks, queue.length)}, (_, at) => copy(at)));
+  } catch (error) {
+    if (error.message !== MONEYBALL_GONE) moneyballSay(`A column could not be played: ${error.message || error}`);
+  }
+}
+// One column: its strategy seated on the turn the board was dealt on, the
+// turns of a pick played, and then the rest of the game seen.
+async function moneyballPlay(deal, path, column, turn, turns) {
+  try {
+    await moneyballAsk(deal, path, {op: "breakpoints"});
+    const there = await moneyballAsk(deal, path, {op: "jump", turn, strategy: column.name});
+    if (there.error || there.turn !== turn) throw new Error(there.error || `turn ${turn} is not kept`);
+    if (!moneyball.dealt.now && there.seat) moneyball.dealt.now = there.seat;
+    const played = await moneyballAsk(deal, path, {op: "play", turns, strategy: column.name});
+    if (played.error && !/no turn left/.test(played.error)) throw new Error(played.error);
+    column.readings = Array.isArray(played.readings) ? played.readings : [];
+    column.seat = played.seat || column.readings[column.readings.length - 1] || there.seat || null;
+    column.finished = played.finished === true;
+    column.winner = played.winner ?? null;
+    moneyballDraw();
+    if (column.finished) {
+      column.end = {turn: played.turn, done: true, victory: null};
+      moneyballDraw();
+      return;
+    }
+    // On to the end of the game, a stretch at a time.
+    let seen = null;
+    for (let stretch = 0; stretch < 40; stretch += 1) {
+      const asked = await moneyballAsk(deal, path, {op: "foresee", turns: MONEYBALL_SIGHT_TURNS, strategy: column.name,
+        ...(seen ? {known: seen.turn} : {anew: true})});
+      const sight = asked && asked.foresight;
+      if (!sight || typeof sight.turn !== "number") break;
+      seen = sight;
+      column.end = {turn: sight.turn, done: sight.done === true, victory: sight.victory || null, limit: sight.limit ?? null};
+      moneyballDraw();
+      if (sight.done || !(sight.played > 0)) break;
+    }
+  } catch (error) {
+    if (error.message === MONEYBALL_GONE) throw error;
+    column.error = String(error.message || error);
+    moneyballDraw();
+  }
+}
+// A column picked: its strategy plays the turns of a pick on the world itself.
+async function moneyballPick(letter) {
+  const dealt = moneyball.dealt;
+  const column = dealt && dealt.columns.find(held => held.letter === letter);
+  if (!column || !column.seat || !moneyballIdle() || !state || state.turn !== dealt.turn) return;
+  moneyball.playing = true;
+  moneyball.deal += 1;
+  const to = dealt.turn + dealt.turns;
+  moneyball.picks.push({from: dealt.turn, to, letter, name: column.name});
+  moneyballSay(`Playing column ${letter} to turn ${to}…`);
+  let played = null;
+  try {
+    played = await debugPlayPlan({from: dealt.turn, print: null, stretches: [{name: column.name, to}]});
+  } catch (error) {
+    played = {ok: false, note: String(error.message || error)};
+  } finally {
+    moneyball.playing = false;
+  }
+  moneyball.said = played && !played.ok ? played.note || "The pick could not be played" : "";
+  moneyball.dealt = null;
+  moneyballWatch();
+}
+function moneyballRead(row, seat) {
+  if (!seat) return null;
+  const value = row[2](seat);
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function moneyballNumber(value) {
+  if (value === null) return "–";
+  const whole = Math.abs(value) >= 100 || Number.isInteger(value);
+  return whole ? Math.round(value).toLocaleString("en-US") : (Math.round(value * 10) / 10).toFixed(1);
+}
+// How long the game will likely go: where the columns' futures end, the
+// middle of them, and how many picks that leaves.
+function moneyballEstimate(dealt) {
+  const ends = dealt.columns.filter(column => column.end && column.end.done).map(column => column.end.turn).sort((one, other) => one - other);
+  const waiting = dealt.columns.some(column => !column.error && !(column.end && column.end.done));
+  if (!ends.length) return {words: waiting ? "Working out how long the game will go…" : "", ends};
+  const middle = ends[Math.floor((ends.length - 1) / 2)];
+  const left = Math.max(0, Math.ceil((middle - dealt.turn) / dealt.turns));
+  const spread = ends[0] === ends[ends.length - 1] ? `turn ${ends[0]}` : `turns ${ends[0]}–${ends[ends.length - 1]}`;
+  return {middle, left, ends,
+    words: `The game looks set to end around turn ${middle} (${spread} if a column played on${waiting ? ", still working" : ""}): ` +
+      `about ${left} more ${left === 1 ? "pick" : "picks"} at ${dealt.turns} turns a pick, ${moneyball.picks.length} made so far.`};
+}
+
+function moneyballMount() {
+  const style = document.createElement("style");
+  style.id = "moneyball-style";
+  style.textContent = MONEYBALL_STYLE;
+  document.head.appendChild(style);
+  const board = document.createElement("section");
+  board.id = "moneyball";
+  board.hidden = true;
+  board.setAttribute("aria-label", "CIVVIS: Moneyball");
+  board.innerHTML = `
+    <div class="mb-head">
+      <h2 class="mb-title">CIVVIS: <i>Moneyball</i></h2>
+      <span class="mb-turn" id="mb-turn"></span>
+      <div class="mb-tools">
+        <label>Turns a pick <select id="mb-turns"></select></label>
+        <label>Columns <select id="mb-columns"></select></label>
+        <details class="mb-rows"><summary>Stats</summary><div class="mb-row-list" id="mb-row-list"></div></details>
+        <button type="button" id="mb-names" aria-pressed="false" title="Show which player strategy each column is">Names</button>
+        <button type="button" id="mb-away" aria-pressed="false" title="Fold the board up to look at the map">Map</button>
+      </div>
+    </div>
+    <div class="mb-body">
+      <p class="mb-estimate" id="mb-estimate"></p>
+      <p class="mb-said" id="mb-said" role="status"></p>
+      <div id="mb-over"></div>
+      <table class="mb-table" id="mb-table"></table>
+      <ol class="mb-picks" id="mb-picks"></ol>
+    </div>`;
+  document.body.appendChild(board);
+  const turns = board.querySelector("#mb-turns"), columns = board.querySelector("#mb-columns");
+  for (const value of MONEYBALL_TURNS) turns.add(new Option(String(value), String(value)));
+  for (const value of MONEYBALL_COLUMNS) columns.add(new Option(String(value), String(value)));
+  turns.value = String(moneyball.set.turns);
+  columns.value = String(moneyball.set.columns);
+  const again = () => { moneyballSave(); moneyball.dealt = null; moneyball.deal += 1; moneyballWatch(); };
+  turns.addEventListener("change", () => { moneyball.set.turns = Number(turns.value); again(); });
+  columns.addEventListener("change", () => { moneyball.set.columns = Number(columns.value); again(); });
+  const list = board.querySelector("#mb-row-list");
+  for (const [key, name, , , what] of MONEYBALL_ROWS) {
+    const label = document.createElement("label");
+    label.title = what;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = key;
+    box.checked = moneyball.set.rows.includes(key);
+    box.addEventListener("change", () => {
+      moneyball.set.rows = MONEYBALL_ROWS.map(row => row[0]).filter(row => row === key ? box.checked : moneyball.set.rows.includes(row));
+      moneyballSave();
+      moneyballDraw();
+    });
+    label.append(box, name);
+    list.appendChild(label);
+  }
+  const names = board.querySelector("#mb-names");
+  names.addEventListener("click", () => { moneyball.set.names = !moneyball.set.names; moneyballSave(); moneyballDraw(); });
+  board.querySelector("#mb-away").addEventListener("click", () => { moneyball.away = !moneyball.away; moneyballDraw(); });
+  // A row's name sorts the columns by it, the most first; again, back to
+  // the order they were drawn in.
+  board.querySelector("#mb-table").addEventListener("click", event => {
+    const sort = event.target.closest("[data-mb-sort]");
+    if (sort) { moneyball.sort = moneyball.sort === sort.dataset.mbSort ? null : sort.dataset.mbSort; moneyballDraw(); return; }
+    const pick = event.target.closest("[data-mb-pick]");
+    if (pick) moneyballPick(pick.dataset.mbPick);
+  });
+  moneyballBoard = board;
+}
+// The board as it stands: the deal's columns in the order drawn or sorted,
+// a row for each figure chosen with the best lit, where the game will likely
+// end, and the picks made.
+function moneyballDraw() {
+  const board = moneyballBoard;
+  if (!board) return;
+  board.hidden = !state;
+  board.classList.toggle("is-away", moneyball.away);
+  board.querySelector("#mb-away").setAttribute("aria-pressed", String(moneyball.away));
+  board.querySelector("#mb-names").setAttribute("aria-pressed", String(moneyball.set.names));
+  document.documentElement.style.setProperty("--mb-left", `${debugMapLeft()}px`);
+  if (!state) return;
+  const dealt = moneyball.dealt;
+  const turnLine = board.querySelector("#mb-turn");
+  turnLine.textContent = "";
+  const shown = document.createElement("b");
+  shown.textContent = `Turn ${state.turn}`;
+  turnLine.append(shown, ` · pick ${moneyball.picks.length + 1}`);
+  board.querySelector("#mb-said").textContent = moneyball.said;
+  const over = board.querySelector("#mb-over");
+  over.textContent = "";
+  if (gameFinished(state)) {
+    const me = (state.players || [])[0] || {};
+    const winners = Array.isArray(state.winners) && state.winners.length ? state.winners
+      : state.winner !== null && state.winner !== undefined ? [state.winner] : [];
+    const card = document.createElement("p");
+    card.className = "mb-over";
+    card.textContent = `${winners.includes(0) ? `${me.civ || "You"} won` : "Game over"} on turn ${state.turn}: ` +
+      `${victoryVerdict(state.victory_type, state.victory_label)}. ${moneyball.picks.length} ${moneyball.picks.length === 1 ? "pick" : "picks"}, score ${moneyballNumber(typeof me.score === "number" ? me.score : null)}.`;
+    const fresh = document.createElement("button");
+    fresh.type = "button";
+    fresh.className = "mb-pick";
+    fresh.style.width = "auto";
+    fresh.textContent = "Play again";
+    fresh.addEventListener("click", () => location.reload());
+    card.appendChild(fresh);
+    over.appendChild(card);
+  }
+  const estimate = dealt ? moneyballEstimate(dealt) : {words: ""};
+  board.querySelector("#mb-estimate").textContent = estimate.words;
+  const table = board.querySelector("#mb-table");
+  table.textContent = "";
+  if (dealt) {
+    const rows = MONEYBALL_ROWS.filter(row => moneyball.set.rows.includes(row[0]));
+    let order = [...dealt.columns];
+    const sortRow = rows.find(row => row[0] === moneyball.sort);
+    if (sortRow) order.sort((one, other) => (moneyballRead(sortRow, other.seat) ?? -Infinity) - (moneyballRead(sortRow, one.seat) ?? -Infinity));
+    const cell = (tag, text, cls) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined && text !== null) node.textContent = text;
+      return node;
+    };
+    const head = document.createElement("thead"), headRow = document.createElement("tr");
+    headRow.appendChild(cell("th", "Stat"));
+    const nowHead = cell("th", "Now", "mb-now");
+    nowHead.appendChild(cell("small", `turn ${dealt.turn}`));
+    headRow.appendChild(nowHead);
+    for (const column of order) {
+      const th = cell("th", column.letter);
+      th.appendChild(cell("small", moneyball.set.names ? debugSearchAgent(column.name) : `turn ${dealt.turn + dealt.turns}`));
+      headRow.appendChild(th);
+    }
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      tr.dataset.row = row[0];
+      const th = document.createElement("th");
+      const sort = cell("button", row[1], "mb-sort");
+      sort.type = "button";
+      sort.dataset.mbSort = row[0];
+      sort.title = `${row[4]}. Sort the columns by it`;
+      if (moneyball.sort === row[0]) sort.setAttribute("aria-sort", "descending");
+      th.appendChild(sort);
+      tr.appendChild(th);
+      const now = moneyballRead(row, dealt.now);
+      tr.appendChild(cell("td", moneyballNumber(now), "mb-now"));
+      const values = order.map(column => moneyballRead(row, column.seat));
+      const known = values.filter(value => value !== null);
+      const top = known.length > 1 ? Math.max(...known) : null;
+      order.forEach((column, at) => {
+        const value = values[at];
+        const td = cell("td", column.error ? "×" : value === null ? (column.seat ? "–" : "…") : moneyballNumber(value),
+          value !== null && top !== null && value === top && known.some(other => other !== top) ? "is-top" : !column.seat && !column.error ? "is-waiting" : "");
+        if (value !== null && now !== null && value !== now) td.appendChild(cell("small", `${value > now ? "+" : "−"}${moneyballNumber(Math.abs(value - now))}`));
+        if (column.error) td.title = column.error;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    }
+    // Where each column's game would end if it played on.
+    const ends = document.createElement("tr");
+    ends.className = "mb-ends";
+    ends.appendChild(cell("th", "Game ends"));
+    ends.appendChild(cell("td", "", "mb-now"));
+    for (const column of order) {
+      const end = column.end;
+      const words = column.error ? "×" : !end ? "…" : end.done ? `turn ${end.turn}${end.victory ? ` · ${titleCase(String(end.victory))}` : ""}` : `past turn ${end.turn}…`;
+      ends.appendChild(cell("td", words));
+    }
+    body.appendChild(ends);
+    table.appendChild(body);
+    const foot = document.createElement("tfoot"), footRow = document.createElement("tr");
+    footRow.append(cell("td"), cell("td"));
+    const free = moneyballIdle() && !gameFinished(state) && state.turn === dealt.turn;
+    for (const column of order) {
+      const td = document.createElement("td");
+      const pick = cell("button", `Pick ${column.letter}`, "mb-pick");
+      pick.type = "button";
+      pick.dataset.mbPick = column.letter;
+      pick.disabled = !free || !column.seat;
+      td.appendChild(pick);
+      footRow.appendChild(td);
+    }
+    foot.appendChild(footRow);
+    table.appendChild(foot);
+  }
+  const picks = board.querySelector("#mb-picks");
+  picks.textContent = "";
+  for (const pick of moneyball.picks) {
+    const item = document.createElement("li");
+    item.textContent = `Turns ${pick.from}–${pick.to}: ${pick.letter}, ${debugSearchAgent(pick.name)}`;
+    picks.appendChild(item);
+  }
+}
+// The state that was just drawn: a world that stands still on a turn the
+// board was not dealt from is dealt again.
+function moneyballWatch() {
+  if (!moneyballBoard || !state) return;
+  const dealt = moneyball.dealt;
+  const fresh = !dealt || dealt.turn !== state.turn || dealt.seed !== String(state.seed ?? "") || dealt.turns !== moneyball.set.turns
+    || dealt.columns.length !== Math.min(moneyball.set.columns, Math.max(1, strangeAgents().length));
+  if (fresh && moneyballIdle() && !gameFinished(state)) moneyballDealBoard();
+  moneyballDraw();
+}
+
+if (MONEYBALL) {
+  moneyballMount();
+  const drawState = render;
+  render = function (st, ...rest) {
+    const drawn = drawState(st, ...rest);
+    try { moneyballWatch(); } catch (error) { console.error("moneyball", error); }
+    return drawn;
+  };
+  window.addEventListener("resize", () => moneyballDraw());
+  // A world that stands still is dealt from once it is idle, whatever drew it last.
+  setInterval(() => { try { if (!moneyball.dealt && state) moneyballWatch(); } catch (error) { console.error("moneyball", error); } }, 1000);
+  if (state) moneyballWatch();
 }

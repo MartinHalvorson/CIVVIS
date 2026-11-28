@@ -87,9 +87,9 @@ body { display: flex; }
 }
 // ---- what the viewer gives the bar
 // Which of the simulator's pages this is, as the viewer's head script says
-// it: the address names it (/debugger, /doctor-strange, /edge-of-tomorrow),
-// or an old link's `?mode=` does, which is how this page is asked.
-window.CIVVIS_PAGE_MODE = ({debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"})[
+// it: the address names it (/debugger, /doctor-strange, /edge-of-tomorrow,
+// /moneyball), or an old link's `?mode=` does, which is how this page is asked.
+window.CIVVIS_PAGE_MODE = ({debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow", moneyball: "moneyball"})[
   location.pathname.replace(/\/(?:index\.html)?$/, "").split("/").pop()] || new URLSearchParams(location.search).get("mode");
 let state = null, sel = null, selCity = null;
 let SPEC = false, autoplaying = false, turnAdvancePending = false;
@@ -5297,6 +5297,105 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert ground == [[0, 940, 110, 800], [0, 900, 110, 800], True], ground
 
 
+def check_moneyball(bar: Bar, address: str) -> None:
+    """CIVVIS: Moneyball: the seat played by the strategy picked off a board
+    of its futures, by their numbers alone.
+
+    Operator, 2026-11-27: "add CIVVIS: Moneyball. This is a minigame where a
+    user only looks at the stats and tries to play the best game. ... User
+    essentially has N columns, each with a different player strategy
+    simulated out N turns. rows are different stats. ... User selects how
+    many turns out they want to skip at a time (default can be 10). We can
+    also estimate how long the game will go ... How many guesses we expect a
+    person to make. ... we can highlight top in each row. player strategy
+    should be the top strategies but randomized on screen. user can chose a
+    row to sort by though if they want."
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    # Six rated strategies on offer: the stand-in's two and four more.
+    bar.ev("localStorage.setItem('civvis-toy-strategies', JSON.stringify([['holy', 1150], ['moonshot', 1100], ['siege', 990], ['tourist', 980]])),"
+           " localStorage.removeItem('civvis-moneyball-v1'), true")
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=moneyball"})
+    bar.until(f"{ready} && location.search === '?mode=moneyball' && state === null", "the page, asked for as CIVVIS: Moneyball")
+    assert bar.ev("[MONEYBALL, TOMORROW, STRANGE, document.documentElement.classList.contains('moneyball'), window.civvisSeatHandsOff]") == \
+        [True, False, False, True, True]
+    # A game of sixty turns.
+    bar.ev("engine.limit = 60, render(engineState()), true")
+    board = """(() => {
+      const table = document.getElementById('mb-table'), dealt = moneyball.dealt;
+      const heads = [...table.querySelectorAll('thead th')].map(th => th.firstChild ? th.firstChild.textContent : '');
+      const rows = [...table.querySelectorAll('tbody tr[data-row]')].map(tr => [tr.dataset.row,
+        [...tr.querySelectorAll('td')].map(td => [td.firstChild ? td.firstChild.textContent : '', td.classList.contains('is-top')])]);
+      const ends = [...table.querySelectorAll('tbody tr.mb-ends td')].map(td => td.textContent);
+      const picks = [...table.querySelectorAll('tfoot .mb-pick')].map(button => [button.dataset.mbPick, button.disabled]);
+      return {shown: !document.getElementById('moneyball').hidden, turn: state.turn, dealt: dealt && dealt.turn, turns: dealt && dealt.turns,
+        names: dealt ? dealt.columns.map(column => [column.letter, column.name]) : [], heads, rows, ends, picks,
+        estimate: document.getElementById('mb-estimate').textContent, said: document.getElementById('mb-said').textContent,
+        history: [...document.querySelectorAll('#mb-picks li')].map(li => li.textContent),
+        debug: getComputedStyle(document.getElementById('debugbar') || document.body).display};
+    })()"""
+    played_out = "moneyball.dealt && moneyball.dealt.columns.every(column => column.seat && column.end && column.end.done)"
+    bar.until(played_out, "every column played its turns and on to the end of the game")
+    seen = bar.ev(board)
+    assert seen["shown"] and seen["debug"] == "none", seen
+    # A column for each of the top six, each named by a letter only, in an
+    # order drawn afresh, and the seat now on the left.
+    assert [letter for letter, _ in seen["names"]] == list("ABCDEF"), seen
+    assert sorted(name for _, name in seen["names"]) == sorted(["jack", "stock", "holy", "moonshot", "siege", "tourist"]), seen
+    assert seen["heads"] == ["Stat", "Now", "A", "B", "C", "D", "E", "F"], seen
+    assert (seen["dealt"], seen["turns"]) == (seen["turn"], 10), seen
+    # The rows shown at first, in their order.
+    assert [row for row, _ in seen["rows"]] == ["score", "cities", "population", "military", "food", "amenities", "housing",
+                                                "production", "science", "culture", "gold"], seen
+    # ByTheBook makes two a turn where the rest make one: its column is the
+    # best Score, and the only one lit in that row.
+    letters = dict((name, letter) for letter, name in seen["names"])
+    score = dict(seen["rows"])["score"]
+    lit = [seen["heads"][2 + at] for at, (_, top) in enumerate(score[1:]) if top]
+    assert lit == [letters["stock"]], (lit, score)
+    # Where each column's game ends: the game's last turn.
+    assert all(end.startswith("turn 60") for end in seen["ends"][1:]), seen["ends"]
+    # How long the game will go, and how many picks that is.
+    assert "around turn 60" in seen["estimate"] and "about 6 more picks at 10 turns a pick, 0 made so far" in seen["estimate"], seen
+    # A row sorts the columns by it, the most first; again, back.
+    drawn = seen["heads"][2:]
+    bar.ev("document.querySelector('#mb-table [data-mb-sort=\"score\"]').click(), true")
+    sorted_heads = bar.ev(board)["heads"]
+    assert sorted_heads[2] == letters["stock"], sorted_heads
+    bar.ev("document.querySelector('#mb-table [data-mb-sort=\"score\"]').click(), true")
+    assert bar.ev(board)["heads"][2:] == drawn
+    # Names says which strategy each column is.
+    bar.ev("document.getElementById('mb-names').click(), true")
+    assert bar.ev("[...document.querySelectorAll('#mb-table thead th small')].slice(1).map(small => small.textContent)") == \
+        [debug_agent for debug_agent in bar.ev("moneyball.dealt.columns.map(column => debugSearchAgent(column.name))")]
+    bar.ev("document.getElementById('mb-names').click(), true")
+    # Picking a column plays its strategy ten turns on the world itself, and
+    # the board is dealt again from there.
+    turn = seen["turn"]
+    bar.ev(f"document.querySelector('#mb-table [data-mb-pick=\"{letters['stock']}\"]').click(), true")
+    bar.until(f"state.turn === {turn + 10} && moneyball.dealt && moneyball.dealt.turn === {turn + 10} && {played_out}",
+              "the pick played ten turns and the board was dealt again")
+    after = bar.ev(board)
+    assert bar.ev("document.getElementById('autoplaystrategy').value") == "stock"
+    stock = bar.ev("debugSearchAgent('stock')")
+    assert after["history"] == [f"Turns {turn}–{turn + 10}: {letters['stock']}, {stock}"], after
+    assert "1 made so far" in after["estimate"], after
+    # Turns a pick, and the stats shown, are the person's to choose.
+    bar.ev("(() => { const turns = document.getElementById('mb-turns'); turns.value = '20'; turns.dispatchEvent(new Event('change')); return true; })()")
+    bar.until(f"moneyball.dealt && moneyball.dealt.turns === 20 && {played_out}", "the board dealt again at twenty turns a pick")
+    bar.ev("(() => { const box = document.querySelector('#mb-row-list input[value=\"score\"]'); box.checked = false; box.dispatchEvent(new Event('change')); return true; })()")
+    assert "score" not in [row for row, _ in bar.ev(board)["rows"]]
+    assert bar.ev("JSON.parse(localStorage.getItem('civvis-moneyball-v1')).turns") == 20
+    # A game that is over says how it went and how many picks it took.
+    bar.ev("engine.over = {turn: state.turn, winner: 0}, engine.limit = state.turn, render(engineState()), true")
+    bar.until("!!document.querySelector('#mb-over .mb-over')", "the game's end on the board")
+    over = bar.ev("document.querySelector('#mb-over .mb-over').textContent")
+    assert "won on turn" in over and "Science victory" in over and "1 pick," in over and "Play again" in over, over
+    # And nothing is left to pick.
+    assert all(off for _, off in bar.ev(board)["picks"]), bar.ev(board)["picks"]
+    bar.ev("localStorage.removeItem('civvis-toy-strategies'), localStorage.removeItem('civvis-moneyball-v1'), true")
+
+
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
     stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-debugger-"))
@@ -5486,6 +5585,12 @@ def main() -> int:
               "own there, one or five, best first, leaves time as it is, takes the next ones when pressed again, and "
               "makes as many as fit in the twelve.")
         check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
+        check_moneyball(bar, f"http://127.0.0.1:{port}/")
+        print("CIVVIS: Moneyball is a board over the map: a column for each of the top six player strategies, named by "
+              "a letter in an order drawn afresh, each played ten turns on a copy of the world and on to the end of the "
+              "game, a row for each stat with the best lit, a row's name sorting the columns by it, where each game ends "
+              "and how many picks that leaves; a pick plays its strategy on the world and the board is dealt again, and "
+              "the turns a pick and the stats shown are the person's to choose.")
         print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own across the "
               "foot of the window, the map area ending above it, the left panel's Auto-play in it (Turns and CIVVIS AI, "
               "36px tall, over Jump back, Auto-play and Checkpoint here, in fixed columns that the words Auto-play "

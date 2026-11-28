@@ -133,7 +133,7 @@
   // reads the same (`CIVVIS_PAGE_MODE`, web/index.html), after this has run,
   // and beta/_worker.js serves the viewer at those addresses; the three hold
   // one table (`SIMULATOR_PAGES`).
-  const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
+  const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow", moneyball: "moneyball"};
   const PAGE_MODE = (() => {
     const page = window.location.pathname.replace(/\/(?:index\.html)?$/, "").split("/").pop();
     if (Object.hasOwn(SIMULATOR_PAGES, page)) return SIMULATOR_PAGES[page];
@@ -259,6 +259,8 @@
     else if (mode === "strange") payload.spectate = false;
     // Edge of Tomorrow is a played game too: the same seat, with a jump back.
     else if (mode === "tomorrow") payload.spectate = false;
+    // And so is CIVVIS: Moneyball, its seat played by the strategy picked.
+    else if (mode === "moneyball") payload.spectate = false;
     else if (mode === "watch") payload.spectate = true;
     // Two of the played pages open on a world of their own, and a link that
     // names its own players, map or shape still has those. Doctor Strange's
@@ -276,6 +278,10 @@
       play: {map_topology: "flat"},
       strange: {num_players: 4, map_script: "pangaea", map_topology: "flat"},
       tomorrow: {num_players: 2, map_script: "continents", map_topology: "flat"},
+      // CIVVIS: Moneyball plays every column's future on a copy of the
+      // world before each pick, so it has Doctor Strange's small world, four
+      // civilizations on a Pangaea, whose turns are the quickest to play.
+      moneyball: {num_players: 4, map_script: "pangaea", map_topology: "flat"},
     };
     for (const [setting, value] of Object.entries(MODE_WORLDS[mode] || {})) {
       if (!(setting in payload)) payload[setting] = value;

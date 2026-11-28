@@ -2479,10 +2479,32 @@ pub(crate) fn empire_output(g: &Game, pid: usize) -> crate::rules::Yields {
 /// `readings` of `play`), so it is a reading of the world and is given
 /// whether or not anybody has met the civilization. A game the debugger
 /// walks is never a mirrored one, so the counts are the board's own.
+///
+/// CIVVIS: Moneyball reads a seat's futures by it too (operator 2026-11-27:
+/// "rows are different stats. cities, mil strength, food, happiness, hous,
+/// prod, science yield, culture yield, etc."), so it also carries what the
+/// standings' other columns show: military strength, the four city averages
+/// (amenities over need, spare housing, loyalty a turn and Food Surplus, as
+/// the player HUD reads them), and the techs, civics and tourism earned.
+/// Each average is `None` with no city to average.
 pub(crate) fn standing(g: &Game, pid: usize) -> Value {
     let player = &g.players[pid];
     let city_ids = g.player_city_ids(pid);
     let population: i32 = city_ids.iter().map(|&cid| g.cities[&cid].pop).sum();
+    let output = empire_output(g, pid);
+    let mean = |reading: &dyn Fn(&crate::game::City) -> f64| {
+        (!city_ids.is_empty()).then(|| {
+            round1(
+                city_ids
+                    .iter()
+                    .map(|cid| reading(&g.cities[cid]))
+                    .sum::<f64>()
+                    / city_ids.len() as f64,
+            )
+        })
+    };
+    let food_surplus = (!city_ids.is_empty())
+        .then(|| round1((output.food - 2.0 * f64::from(population)) / city_ids.len() as f64));
     json!({
         "turn": g.turn,
         "alive": player.alive,
@@ -2490,7 +2512,15 @@ pub(crate) fn standing(g: &Game, pid: usize) -> Value {
         "cities": city_ids.len(),
         "population": population,
         "gold_per_turn": round1(player.gold_per_turn),
-        "yields": yields_json(&empire_output(g, pid)),
+        "yields": yields_json(&output),
+        "military": g.military_power(pid).round(),
+        "amenities": mean(&|city| g.city_amenity_surplus(city) as f64),
+        "housing": mean(&|city| g.city_housing_headroom(city)),
+        "loyalty": mean(&|city| g.city_loyalty_per_turn(city)),
+        "food_surplus": food_surplus,
+        "techs": player.techs.len(),
+        "civics": player.civics.len(),
+        "tourism": round1(player.tourism_lifetime),
     })
 }
 

@@ -754,7 +754,7 @@ PLAIN = re.compile(r"[A-Za-z0-9._~/?#=&%+-]+")
 # (beta/_worker.js, `SIMULATOR_PAGES`): no file stands at them, and the lane
 # has them when its viewer reads which page it is off its address.
 viewer = out / "index.html"
-SIMULATOR = ({"debugger", "doctor-strange", "edge-of-tomorrow"}
+SIMULATOR = ({"debugger", "doctor-strange", "edge-of-tomorrow", "moneyball"}
              if viewer.is_file() and "CIVVIS_PAGE_MODE" in viewer.read_text(encoding="utf-8") else set())
 
 
@@ -899,7 +899,7 @@ for page in ${pages[@]+"${pages[@]}"}; do pages_json="$pages_json${pages_json:+,
 # the list out, so the worker forwards the new addresses there to the old.
 simulator_json=""
 if grep -q "CIVVIS_PAGE_MODE" "$source_tree/web/index.html"; then
-  simulator_json='  "simulator_pages": ["debugger", "doctor-strange", "edge-of-tomorrow"],'
+  simulator_json='  "simulator_pages": ["debugger", "doctor-strange", "edge-of-tomorrow", "moneyball"],'
 fi
 cat > "$out/build.json" <<JSON
 {

@@ -563,6 +563,8 @@ class TournamentsPage(unittest.TestCase):
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s CIVVIS</a>\n'
             '      <a class="site-link" href="../edge-of-tomorrow" '
             'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>\n'
+            '      <a class="site-link" href="../moneyball" '
+            'title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>\n'
             '      <a class="site-link" href="../debugger" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>\n'
             '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
