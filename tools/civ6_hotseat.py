@@ -1205,6 +1205,36 @@ class Journal:
         return out
 
 
+#: The hotseat loops' upkeep pass (the harness beat, the event monitor, the
+#: workers kept alive, the stall and liveness checks), and how often the
+#: game's log is relayed to the decision workers in between (`relay_for`).
+PASS_S = 0.5
+RELAY_S = 0.02
+
+
+def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
+              clock=None, sleep=None) -> None:
+    """Relay the game's log to the workers every `read_s` for `seconds`.
+
+    A decider reads its board from its seat's events.jsonl (`civvis_orders
+    --mirror`), which only these bridges write. Relayed once per half-second
+    pass, every board waited for the next pass: in the live six-player game
+    (hotseat-20261128T031456Z, turns 1-15, the seats' brain.log stamps) one
+    frame's answer to the next was 523 ms median (45 of 47 within 471-579 ms,
+    one pass), and one seat's last answer to the next seat's first 1057 ms
+    median (two passes), where the decider answers in 10 ms. The ladder relays
+    every 50 ms between its passes for the same reason (`civ6_play.py`,
+    `read_s`). Only the relay runs this often; everything else keeps the pass.
+    (The same loop as `watch.relay_for` in #6003, which this can call once
+    that is merged.)"""
+    clock, sleep = clock or time.monotonic, sleep or time.sleep
+    until = clock() + seconds
+    while (left := until - clock()) > 0:
+        sleep(min(read_s, left))
+        for bridge in bridges:
+            bridge.pump()
+
+
 #: `quit_civ`'s clock: the whole attempt, the seconds a question that is up
 #: is always given to be answered, how many unanswered looks before the menu
 #: quit is asked again, and the launcher's own stop behind it all.
@@ -2316,7 +2346,7 @@ def run_manual(args: argparse.Namespace) -> int:
                 break
             if brains is not None and monitor.stalled(args.stall_seconds):
                 manual_stall_note(monitor, log, now)
-            time.sleep(0.5)
+            relay_for(bridges)
     except Stop as stop:
         if stop_reason == "finished":
             stop_reason = f"stopped ({stop})"
@@ -2731,6 +2761,10 @@ def run(args: argparse.Namespace) -> int:
             "the game itself stays up.")
         waited_for_game = began_waiting = checked_start = time.monotonic()
         posted = False
+        # Whether Civ VI still runs, without a `ps` every pass: the relay reads
+        # nothing while one runs (~28 ms, and seconds on a loaded host). An
+        # exit is still confirmed by a real listing (`watch.GameLiveness`).
+        liveness = watch.GameLiveness()
         while True:
             for bridge in bridges:
                 bridge.pump()
@@ -2738,7 +2772,7 @@ def run(args: argparse.Namespace) -> int:
             brains.keep_alive()
             if os.name == "nt" and (run_dir / "stop.json").is_file():
                 raise Stop("stop requested")
-            if not env.game_pids():
+            if not liveness.alive():
                 stop_reason = "Civ VI closed"
                 log("Civ VI has closed")
                 break
@@ -2780,7 +2814,7 @@ def run(args: argparse.Namespace) -> int:
                 waited_for_game = time.monotonic()
             if monitor.stalled(args.stall_seconds):
                 rescue_popup(monitor, log)
-            time.sleep(0.5)
+            relay_for(bridges)
     except Stop as stop:
         stop_reason = f"stopped ({stop})"
         log(f"stopping: {stop}")

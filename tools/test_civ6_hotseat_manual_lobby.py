@@ -474,6 +474,17 @@ CHILD = textwrap.dedent(r"""
         def keep_alive(self): pass
         def stop(self): pass
     hotseat.Brains = FakeBrains
+    # How often the log is relayed against how often the loop's upkeep runs.
+    counts = {"pumps": 0, "beats": 0}
+    RealPump, RealBeat = hotseat.watch.EventLogBridge.pump, hotseat.HarnessBeat.beat
+    def counted_pump(self):
+        counts["pumps"] += 1
+        return RealPump(self)
+    def counted_beat(self):
+        counts["beats"] += 1
+        return RealBeat(self)
+    hotseat.watch.EventLogBridge.pump = counted_pump
+    hotseat.HarnessBeat.beat = counted_beat
 
     TAG = "hs-manual-e2e"
     def event(**fields):
@@ -507,16 +518,23 @@ CHILD = textwrap.dedent(r"""
         steps += [lambda: pids.clear()]
     else:
         steps += [lambda: None] * 6 + [lambda: os.kill(os.getpid(), signal.SIGTERM)]
-    # The game drives the harness's clock: each of its loop sleeps advances
-    # `time.monotonic` by exactly what it asked for and plays the next step, so
-    # nothing depends on how fast this machine runs. It starts at 10 s, as on a
-    # CI runner booted moments ago.
+    # The game drives the harness's clock: each of its sleeps advances
+    # `time.monotonic` by exactly what it asked for, and the game plays its
+    # next step each time the clock passes a loop's pass (the relay sleeps in
+    # 20 ms steps between passes), so nothing depends on how fast this machine
+    # runs. It starts at 10 s, as on a CI runner booted moments ago. A run that
+    # never ends on its own is stopped after 10 minutes of its clock.
     clock = [10.0]
+    due = [10.0 + hotseat.PASS_S]
     time.monotonic = lambda: clock[0]
     def fake_sleep(seconds):
         clock[0] += seconds
-        if steps:
-            steps.pop(0)()
+        if clock[0] > 610.0:
+            raise SystemExit("the run never ended")
+        if clock[0] + 1e-9 >= due[0]:
+            due[0] += hotseat.PASS_S
+            if steps:
+                steps.pop(0)()
     time.sleep = fake_sleep
     binary = tmp / "civvis_orders"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
     extra = ["--stall-seconds", "5"] if scenario == "stall" else []
@@ -537,7 +555,7 @@ CHILD = textwrap.dedent(r"""
         "installed": (tmp / "Assets" / "DLC" / "CivvisControl").exists(),
         "log": (run_dir / "hotseat.log").read_text(),
         "summary": json.loads((run_dir / "summary.json").read_text()),
-        "harness_rows": rows,
+        "harness_rows": rows, "counts": counts,
     }))
 """)
 
@@ -583,6 +601,12 @@ class ManualLobbyEndToEndTest(unittest.TestCase):
         self.assertFalse(result["installed"], "removed once Civ VI is not running")
         self.assertEqual(result["summary"]["civvis_seats"], [1, 2])
         self.assertEqual(result["summary"]["reason"], "Civ VI closed")
+        # Six logs relayed (the table's and seats 1-5's) 25 times a pass and
+        # once at its start, against one beat a pass: a board reaches its
+        # decider within 20 ms, not at the next pass (live 2026-11-28: 523 ms).
+        counts = result["counts"]
+        self.assertGreater(counts["beats"], 5)
+        self.assertGreaterEqual(counts["pumps"], 6 * 25 * (counts["beats"] - 2))
 
     def test_stopping_with_civ_up_leaves_the_mod_and_the_game(self) -> None:
         result = self.run_child("stop")
