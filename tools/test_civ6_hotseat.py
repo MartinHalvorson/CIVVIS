@@ -172,6 +172,122 @@ STAGING = ocr(("Players", 191, 419), ("Team", 302, 419), ("Difficulty", 507, 419
 BOUNDS = (0, 33, 864, 1084)
 
 
+class StagingRoom:
+    """The staging room as the harness meets it: seats that read as live ones
+    did on 2026-11-27 (window (0, 0, 1710, 1107): a name line every 45 points
+    from 223, the seat type 17 under it; an open seat reads only "Open" on its
+    name line, with its list a line lower), lists that open on a click on a
+    seat's type line, and a screen reader that can be told to drop a row."""
+
+    BOUNDS = (0, 0, 1710, 1107)
+
+    def __init__(self, kinds: list[str], dropped: dict[int, int] | None = None):
+        self.kinds = list(kinds)
+        self.open_list: int | None = None
+        self.dropped = dict(dropped or {})      # reading number -> seat index not read
+        self.readings = 0
+        self.clicks: list[tuple[int, int]] = []
+        self.parked = 0
+
+    def type_y(self, index: int) -> int:
+        return 240 + 45 * index + (1 if self.kinds[index] == "open" else 0)
+
+    def read(self, _run_dir, name: str, _fallback=None):
+        staging = name.startswith("staging-")
+        if staging:
+            self.readings += 1
+        rows = [("Players", 427, 196), ("ADD PLAYER", 857, 240 + 45 * len(self.kinds) + 20),
+                ("START GAME", 855, 1090)]
+        for i, kind in enumerate(self.kinds):
+            if staging and self.dropped.get(self.readings) == i:
+                continue
+            if kind == "open":
+                rows.append(("Open", 508, 223 + 45 * i))
+            else:
+                rows.append((f"Player {i + 1}" if kind != "computer" else "Random Leader", 508, 223 + 45 * i))
+                rows.append((kind.capitalize(), 442, 240 + 45 * i))
+        if self.open_list is not None:
+            base = self.type_y(self.open_list)
+            rows += [("Closed", 509, base + 46), ("Human", 508, base + 69)]
+        return self.BOUNDS, ocr(*rows)
+
+    def click(self, _log, point) -> None:
+        x, y = point
+        self.clicks.append((x, y))
+        if self.open_list is not None:
+            base, index = self.type_y(self.open_list), self.open_list
+            self.open_list = None
+            if abs(y - (base + 46)) <= 8:
+                del self.kinds[index]
+            elif abs(y - (base + 69)) <= 8:
+                self.kinds[index] = "player"
+            return
+        if abs(y - (240 + 45 * len(self.kinds) + 20)) <= 8 and x > 700:
+            self.kinds.append("open")
+            return
+        for i in range(len(self.kinds)):
+            if abs(y - self.type_y(i)) <= 8 and 412 <= x <= 600:
+                self.open_list = i
+
+
+class SeatingTest(unittest.TestCase):
+    def seat(self, room: StagingRoom, players: int) -> tuple[bool, list[str]]:
+        said: list[str] = []
+        with patch.object(hotseat, "read_screen", side_effect=room.read), \
+                patch.object(hotseat, "click", side_effect=room.click), \
+                patch.object(hotseat.time, "sleep"), \
+                patch.object(hotseat.play, "ensure_game_frontmost", return_value=True) as front, \
+                patch.object(hotseat.play, "park_setup_pointer",
+                             side_effect=lambda bounds: setattr(room, "parked", room.parked + 1)), \
+                patch.object(hotseat.play.macos_input, "press_key"):
+            done = hotseat.seat_the_players(Path("/tmp/r"), room.BOUNDS, players, said.append)
+            self.fronted = front.call_count
+        return done, said
+
+    def test_six_computer_seats_become_six_hotseat_humans(self) -> None:
+        room = StagingRoom(["host"] + ["computer"] * 5)
+        done, said = self.seat(room, 6)
+        self.assertTrue(done, said)
+        self.assertEqual(room.kinds, ["host"] + ["player"] * 5)
+        self.assertIn("staging room: 6 hotseat seats and 0 Firaxis AI, verified", said[-1])
+        self.assertEqual(self.fronted, room.readings, "the game is in front for every reading")
+        self.assertEqual(room.parked, 5, "the pointer is parked after every pick")
+
+    def test_a_row_dropped_for_one_reading_adds_no_seat(self) -> None:
+        # 2026-11-27: one row unread for a frame made five seats of six, ADD
+        # PLAYER was pressed, and a seventh seat stood in the room.
+        room = StagingRoom(["host"] + ["computer"] * 5, dropped={1: 4, 4: 2})
+        done, said = self.seat(room, 6)
+        self.assertTrue(done, said)
+        self.assertEqual(room.kinds, ["host"] + ["player"] * 5, "six seats, never seven")
+        self.assertFalse([c for c in room.clicks if c[0] > 700], "ADD PLAYER was never pressed")
+
+    def test_a_table_larger_than_the_map_offers_is_still_filled(self) -> None:
+        room = StagingRoom(["host", "computer", "computer", "computer"])
+        done, said = self.seat(room, 6)
+        self.assertTrue(done, said)
+        self.assertEqual(room.kinds, ["host"] + ["player"] * 5)
+        self.assertEqual(len([c for c in room.clicks if c[0] > 700]), 2, "two seats added, on second readings")
+
+    def test_an_open_seat_too_many_is_closed_by_its_own_list(self) -> None:
+        # Its list is a line under its name: a click on the name never opened it.
+        room = StagingRoom(["host", "player", "player", "player", "computer", "player", "open"])
+        done, said = self.seat(room, 6)
+        self.assertTrue(done, said)
+        self.assertEqual(room.kinds, ["host"] + ["player"] * 5)
+        first = room.clicks[0]
+        self.assertEqual(first, (508 + 30, 223 + 45 * 6 + int(hotseat.OPEN_LIST_DROP * 1107)),
+                         "the open seat's list, not its name")
+        self.assertFalse([line for line in said if "did not offer" in line], said)
+
+    def test_a_seated_seat_too_many_is_closed_on_its_type_line(self) -> None:
+        room = StagingRoom(["host", "computer", "computer"])
+        done, said = self.seat(room, 2)
+        self.assertTrue(done, said)
+        self.assertEqual(room.kinds, ["host", "player"])
+        self.assertEqual(room.clicks[0], (442 + 30, 240 + 45 * 2))
+
+
 class MenuReadingTest(unittest.TestCase):
     def test_seat_types_are_read_row_by_row(self) -> None:
         rows = hotseat.slot_rows(STAGING, BOUNDS)

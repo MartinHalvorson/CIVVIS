@@ -862,22 +862,35 @@ def slot_word(word: str) -> str | None:
     return next((known for known in sorted(SLOT_WORDS) if near(word, known)), None)
 
 
+#: An open seat's list is under its name line, this share of the window's
+#: height below it: a seated row reads its type on that line and is clicked
+#: there, an open one reads only "Open", a line higher. Live 2026-11-27
+#: (hotseat-20261128T031456Z, a 1107-point window): "Open" at y 495, a click at
+#: 513 opened the list ("Closed" at 559, "Human" at 582); a click at 495 never did.
+OPEN_LIST_DROP = 0.0163
+
+
 def choose_from_dropdown(run_dir: Path, log: Log, row: dict, option: str,
                          bounds: tuple, step: int) -> bool:
-    click(log, (row["x"] + 30, row["y"]))
+    _, _, _, h = bounds
+    drop = int(OPEN_LIST_DROP * h) if row.get("slot") == "open" else 0
+    click(log, (row["x"] + 30, row["y"] + drop))
     time.sleep(1.2)
     _, rows = read_screen(run_dir, f"slot-{step}-open")
-    _, _, _, h = bounds
     picks = [r for r in find(rows, option)
              if row["y"] < r["y"] <= row["y"] + 0.15 * h and abs(r["x"] - row["x"]) < 120]
     if not picks:
         log(f"[setup] the seat list did not offer {option!r}; closing it")
         play.macos_input.press_key("escape")
         time.sleep(0.8)
+        play.park_setup_pointer(bounds)
         return False
     pick = min(picks, key=lambda r: r["y"])
     click(log, (pick["x"], pick["y"]))
     time.sleep(1.2)
+    # Off the row before the room is read again: the pointer left on a seat's
+    # list raises its tooltip ("AI Player"), which read as one more seat.
+    play.park_setup_pointer(bounds)
     return True
 
 
@@ -898,7 +911,10 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
     """Make rows 1..humans-1 hotseat humans, the rest up to `players` Firaxis
     AI, and close every row after them (every seat human by default)."""
     want = wanted_slots(players, humans)
+    short = 0
     for step in range(1, 30):
+        # A staging room behind another window reads as that window.
+        play.ensure_game_frontmost()
         _, rows = read_screen(run_dir, f"staging-{step}")
         seats = slot_rows(rows, bounds)
         kinds = [s["slot"] for s in seats]
@@ -910,9 +926,18 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
                 f"{want.count('computer')} Firaxis AI, verified")
             return True
         if len(seats) > players:
+            short = 0
             choose_from_dropdown(run_dir, log, seats[-1], "Closed", bounds, step)
             continue
         if len(seats) < players:
+            # One reading is not a count. A row the screen reader dropped for a
+            # frame made five seats of six, and the seat added for it was one
+            # too many (2026-11-27): a seat is added on the second short reading.
+            short += 1
+            if short < 2:
+                time.sleep(1.5)
+                continue
+            short = 0
             add = find(rows, "ADD PLAYER")
             if not add:
                 log("[setup] fewer seats than wanted and no ADD PLAYER button")
@@ -920,6 +945,7 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
             click(log, (add[0]["x"], add[0]["y"]))
             time.sleep(1.5)
             continue
+        short = 0
         index = next(i for i in range(1, len(want)) if kinds[i] != want[i])
         if want[index] == "player":
             choose_from_dropdown(run_dir, log, seats[index], "Human", bounds, step)
