@@ -368,7 +368,20 @@ local function seatHost(cfg, before)
             return { IsHidden = function() return hidden end }
         end,
     }
-    env.LuaEvents = { CivvisControlPulse = function() end, CivvisControlPeek = function() end }
+    -- The two this context raises are calls; any other is an event it listens to.
+    h.luaListeners = {}
+    env.LuaEvents = setmetatable({ CivvisControlPulse = function() end, CivvisControlPeek = function() end },
+        { __index = function(events, name)
+            local event = { Add = function(listener)
+                h.luaListeners[name] = h.luaListeners[name] or {}
+                table.insert(h.luaListeners[name], listener)
+            end }
+            rawset(events, name, event)
+            return event
+        end })
+    h.luaFire = function(name, ...)
+        for _, listener in ipairs(h.luaListeners[name] or {}) do listener(...) end
+    end
     env.Automation = {
         GetTime = function() return h.clock end,
         Log = function(line) h.logs[#h.logs + 1] = line end,
@@ -561,6 +574,23 @@ do
         for _ = 1, 200 do h.second(false) end
         assert(#h.requests == 0 and h.pause_set == nil and #h.kinds("seat_quiet") == 0,
             "the watch acted where it must not")
+    end
+    -- "Just One More Turn" (EndGameMenu.lua:349-351 `OnBack` raises
+    -- `LuaEvents.EndGameMenu_OneMoreTurn()`): the game goes on, and so does the
+    -- watch. Before 2026-11-28 it stood down at the victory for good.
+    do
+        local h = seatHost(HOTSEAT)
+        h.second(true)
+        h.victory()
+        for _ = 1, 100 do h.second(false) end
+        assert(#h.requests == 0 and #h.kinds("seat_quiet") == 0, "the end screen: the watch stands down")
+        h.luaFire("EndGameMenu_OneMoreTurn")
+        h.second(true)
+        for _ = 1, 44 do h.second(false) end
+        assert(#h.kinds("seat_quiet") == 0, "after one more turn a seat gets its 45 s again")
+        h.second(false)
+        assert(#h.kinds("seat_quiet") == 1 and #h.requests == 1
+            and h.requests[1].action == "ACTION_ENDTURN", "after one more turn a quiet seat is ended again")
     end
     -- A person's seat: their turn is theirs for as long as they like.
     local human = { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2, 3 },
