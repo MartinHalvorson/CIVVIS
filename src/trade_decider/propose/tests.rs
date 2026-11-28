@@ -347,7 +347,7 @@ fn canada_sells_its_spare_horses_and_the_two_seats_settle_by_counter() {
     let (step, terms) = closed.expect("the deal closes");
     assert_eq!(step, 1, "a counter, then the seller's acceptance");
     // From the seller's side: its Horses for Gold a turn, both sides gaining.
-    let for_seller = terms.deal(&none(), true).unwrap();
+    let for_seller = terms.deal(&none()).unwrap();
     assert!(seller.net(&for_seller, None) > 0.0);
     assert!(buyer.net(&for_seller.mirrored(), None) > 0.0);
 }
