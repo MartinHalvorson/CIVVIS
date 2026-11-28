@@ -5920,6 +5920,14 @@ pub const GENES: &[Gene] = &[
     // or rather than walk more than two. Opt-in; see
     // `advanced/capital_founds_before_it_flees.rs`.
     Gene { tag: "capital-founds-before-it-flees", field: "capital_founds_before_it_flees", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_founds_before_it_flees, disable: AdvancedAi::disable_capital_founds_before_it_flees },
+    // An assigned Culture lane read Expansion ("the first half is reserved
+    // for expansion and defense") until its t84 buildup clock in 7 of 40
+    // reviewed tourney games (2026-11-28), with "best lane culture at 100%
+    // progress" from t1: 0 tourists at t100 against a rival's 4-26%. It held
+    // 4 cities at t34-t62 and kept founding after the switch. At 4 cities a
+    // Culture lane follows its lane; settling is unchanged. Opt-in; see
+    // `advanced/culture_core_ends_expansion.rs`.
+    Gene { tag: "culture-core-ends-expansion", field: "culture_core_ends_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_core_ends_expansion, disable: AdvancedAi::disable_culture_core_ends_expansion },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -358,6 +358,10 @@ impl AdvancedAi {
         /// walk more than two turns; see
         /// `advanced/capital_founds_before_it_flees.rs`.
         capital_founds_before_it_flees => enable_capital_founds_before_it_flees, disable_capital_founds_before_it_flees;
+        /// Opt-in gene `culture-core-ends-expansion`: an assigned Culture
+        /// lane follows its lane at its core of cities; see
+        /// `advanced/culture_core_ends_expansion.rs`.
+        culture_core_ends_expansion => enable_culture_core_ends_expansion, disable_culture_core_ends_expansion;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
