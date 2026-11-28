@@ -704,6 +704,10 @@ impl AdvancedAi {
                 // same city target. False with the gene off. See
                 // `advanced/science_core_ends_expansion.rs`.
                 && !self.science_core_ends_expansion_for(Some(target), cities.len())
+                // `culture-core-ends-expansion`: the same for an assigned
+                // Culture lane at its core of cities. False with the gene
+                // off. See `advanced/culture_core_ends_expansion.rs`.
+                && !self.culture_core_ends_expansion_for(Some(target), cities.len())
                 // `lane-once-taken-holds`: a lane this seat has already
                 // followed does not come back here when the city target
                 // rises or a site opens. False with the gene off. See

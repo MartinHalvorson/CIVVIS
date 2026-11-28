@@ -7157,6 +7157,10 @@ pub struct AdvancedAi {
     /// Settler while it held no city; cleared once it holds one. Empire
     /// memory, so a rebuilt board's new unit ids do not restart it.
     capital_founds_clock: Option<u32>,
+    /// `culture-core-ends-expansion`: an assigned Culture lane leaves the
+    /// Expansion half once it holds its core of cities. See
+    /// `advanced/culture_core_ends_expansion.rs`. Off by default.
+    culture_core_ends_expansion: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -12008,6 +12012,8 @@ mod culture_aesthetics;
 /// `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`.
 mod culture_band_bank;
 mod culture_commerce_floor;
+/// `culture-core-ends-expansion`: see `advanced/culture_core_ends_expansion.rs`.
+mod culture_core_ends_expansion;
 /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
 mod culture_drama_first;
 /// `culture-faith-patronizes-the-creators`: see
