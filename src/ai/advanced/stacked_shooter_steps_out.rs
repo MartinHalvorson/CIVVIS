@@ -72,6 +72,10 @@
 //!
 //! Stateless: every turn is read from that turn's board. Off, nothing here
 //! runs. Grep the journal for `stacked-shooter-steps-out:`.
+//!
+//! The soldier, guard, enemy and tile readings here are also
+//! `stacked-soldiers-step-apart`'s, the post-pass for every other stack
+//! (`advanced/stacked_soldiers_step_apart.rs`).
 
 use super::*;
 use crate::shared_sort::SharedSort;
@@ -97,7 +101,7 @@ pub(crate) const STEP_OUT_OWN_GROUND: i64 = 1;
 /// An enemy soldier read by the pass: its position, and whether it strikes in
 /// melee.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct StepOutEnemy {
+pub(super) struct StepOutEnemy {
     pos: Pos,
     melee: bool,
 }
@@ -106,7 +110,7 @@ impl AdvancedAi {
     /// A combat unit of ours, land or sea: what shares a centre under the
     /// engine's reading of the host rule (`Game::shooter_stacked_in_city`
     /// counts any unit with strength, a Galley in port included).
-    fn step_out_soldier(g: &Game, pid: usize, uid: u32) -> bool {
+    pub(super) fn step_out_soldier(g: &Game, pid: usize, uid: u32) -> bool {
         g.units.get(&uid).is_some_and(|unit| {
             let spec = &g.rules.units[unit.kind];
             unit.owner == pid
@@ -118,14 +122,14 @@ impl AdvancedAi {
     }
 
     /// A ship: it steps onto water, everything else onto land.
-    fn step_out_ship(g: &Game, uid: u32) -> bool {
+    pub(super) fn step_out_ship(g: &Game, uid: u32) -> bool {
         g.units
             .get(&uid)
             .is_some_and(|unit| g.rules.units[unit.kind].domain.as_deref() == Some("sea"))
     }
 
     /// A unit with a ranged attack.
-    fn step_out_shooter(g: &Game, uid: u32) -> bool {
+    pub(super) fn step_out_shooter(g: &Game, uid: u32) -> bool {
         g.units
             .get(&uid)
             .is_some_and(|unit| g.rules.units[unit.kind].has_ranged_attack())
@@ -133,14 +137,19 @@ impl AdvancedAi {
 
     /// A soldier that is a civilian's: in a formation, a Settler's bound
     /// escort or a Builder's reserved guard. It keeps its charge's tile.
-    fn step_out_guard(&self, g: &Game, uid: u32) -> bool {
+    pub(super) fn step_out_guard(&self, g: &Game, uid: u32) -> bool {
         g.units[&uid].linked_to.is_some()
             || self.guard_is_bound_to_any_settler(uid)
             || self.guard_is_reserved_for_civilian(uid)
     }
 
     /// The enemy land soldiers we see within `radius` of `at`, recon left out.
-    fn step_out_enemies(g: &Game, pid: usize, at: Pos, radius: i32) -> Vec<StepOutEnemy> {
+    pub(super) fn step_out_enemies(
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        radius: i32,
+    ) -> Vec<StepOutEnemy> {
         let visible = g.player_vision_frame(pid);
         let mut seen: Vec<(u32, StepOutEnemy)> = g
             .units
@@ -191,7 +200,7 @@ impl AdvancedAi {
 
     /// The tiles beside `centre` that `uid` may step onto, best first, each
     /// with its score and whether a shooter keeps a shot from it.
-    fn step_out_tiles(
+    pub(super) fn step_out_tiles(
         g: &Game,
         pid: usize,
         uid: u32,

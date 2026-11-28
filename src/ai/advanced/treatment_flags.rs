@@ -150,6 +150,10 @@ impl AdvancedAi {
         /// `BasicAi::opening_defense_spares_the_holy_site`; opt-in gene
         /// `opening-defense-spares-the-holy-site`.
         base.opening_defense_spares_the_holy_site => enable_opening_defense_spares_the_holy_site, disable_opening_defense_spares_the_holy_site;
+        /// Opt-in gene `asks-go-once-a-turn`: a diplomatic ask, a deal or a
+        /// Trader route goes to the host once a turn, not once a frame; see
+        /// `advanced/asks_go_once_a_turn.rs`.
+        asks_go_once_a_turn => enable_asks_go_once_a_turn, disable_asks_go_once_a_turn;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `culture-and-religion-build-the-statue`; see
         /// `advanced/diplo_wonder_claim.rs`.
@@ -421,6 +425,10 @@ impl AdvancedAi {
         /// Darwin with no reachable site buys one Open Borders grant; see
         /// `advanced/foreign_site_open_border.rs`.
         foreign_site_buys_the_open_border => enable_foreign_site_buys_the_open_border, disable_foreign_site_buys_the_open_border;
+        /// Opt-in gene `founding-voyage-2`: a cityless seat's embarked
+        /// Settler sails for land with its escort alongside; see
+        /// `advanced/maori_founds_from_the_sea.rs`.
+        founding_voyage_2 => enable_founding_voyage_2, disable_founding_voyage_2;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -612,6 +620,10 @@ impl AdvancedAi {
         /// friendship is not asked again for ten turns; see
         /// `advanced/refused_friendship_waits.rs`.
         refused_friendship_waits => enable_refused_friendship_waits, disable_refused_friendship_waits;
+        /// Opt-in gene `person-units-threaten-civilians` (hotseat): a person's
+        /// soldiers threaten our civilians at any war state; see
+        /// `advanced/person_units_threaten_civilians.rs`.
+        person_units_threaten_civilians => enable_person_units_threaten_civilians, disable_person_units_threaten_civilians;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
@@ -742,6 +754,14 @@ impl AdvancedAi {
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.
         settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
+        /// Opt-in gene `stacked-soldiers-step-apart`: soldiers of ours the
+        /// unit pass leaves on one tile step apart, so each can take a hold;
+        /// see `advanced/stacked_soldiers_step_apart.rs`.
+        stacked_soldiers_step_apart => enable_stacked_soldiers_step_apart, disable_stacked_soldiers_step_apart;
+        /// Opt-in gene `science-seat-writes-first`: a Science seat's research
+        /// takes Writing once it knows two techs; see
+        /// `advanced/science_seat_writes_first.rs`.
+        science_seat_writes_first => enable_science_seat_writes_first, disable_science_seat_writes_first;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -776,6 +796,9 @@ impl AdvancedAi {
         /// Opt-in gene `tagma-timing-needs-the-edge`; see
         /// `advanced/tagma_timing_needs_the_edge.rs`.
         tagma_timing_needs_the_edge => enable_tagma_timing_needs_the_edge, disable_tagma_timing_needs_the_edge;
+        /// Opt-in gene `wounded-spreader-spends-far-from-home`; see
+        /// `advanced/apostle_army.rs`.
+        wounded_spreader_spends_far_from_home => enable_wounded_spreader_spends_far_from_home, disable_wounded_spreader_spends_far_from_home;
         /// Opt-in gene `watched-capital-trains-its-defender`; see
         /// `advanced/watched_capital_trains_its_defender.rs`.
         watched_capital_trains_its_defender => enable_watched_capital_trains_its_defender, disable_watched_capital_trains_its_defender;
@@ -785,6 +808,10 @@ impl AdvancedAi {
         /// Opt-in gene `war-threat-holds-recovery`; see
         /// `advanced/war_threat_holds_recovery.rs`.
         war_threat_holds_recovery => enable_war_threat_holds_recovery, disable_war_threat_holds_recovery;
+        /// Opt-in gene `taken-settler-is-retaken`: a hostile standing on a
+        /// civilian it took from us is struck for the civilian; see
+        /// `advanced/taken_settler_is_retaken.rs`.
+        taken_settler_is_retaken => enable_taken_settler_is_retaken, disable_taken_settler_is_retaken;
     }
 
     toggles! {

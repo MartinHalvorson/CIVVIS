@@ -537,6 +537,9 @@ GENOMES = ("live", "stock")
 DEPLOY_DIR = (Path(getattr(sys, "_MEIPASS", HERE)) / "deploy" if FROZEN
               else HERE.parent / "deploy")
 LIVE_FORCE_FILE = DEPLOY_DIR / "live-force-on.txt"
+#: Genes armed for a person's hotseat game on top of the ladder's list
+#: (`hotseat_treatments`): read only here, never by the ladder.
+HOTSEAT_FORCE_FILE = DEPLOY_DIR / "hotseat-force-on.txt"
 LOCAL_FORCE_FILE = Path.home() / ".civvis-live-force-on"
 #: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`, the same file from a checkout).
 MOD_ARMS_FILE = DEPLOY_DIR / "live-mod-arms.txt" if FROZEN else play.TREE_MOD_ARMS_FILE
@@ -579,6 +582,18 @@ def live_treatments(environ=None, repo_file: Path | None = None,
     if repo is not None:
         return force_tags(repo), "deploy/live-force-on.txt"
     return [], "no live list in this install"
+
+
+def hotseat_treatments(path: Path | None = None) -> list[str]:
+    """The hotseat-only genes (`deploy/hotseat-force-on.txt`): one tag a line,
+    `#` to the end of a line a note. The gameplay lanes' genes for a person's
+    game (findings 2026-11-28): before this the only way to arm one for a
+    hotseat seat was `CIVVIS_WITH`, which replaces the ladder's whole list."""
+    try:
+        text = (HOTSEAT_FORCE_FILE if path is None else path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return force_tags("\n".join(line.split("#", 1)[0] for line in text.splitlines()))
 
 
 def genome_forced(stderr: str) -> list[str] | None:
@@ -664,15 +679,20 @@ def live_genome(args: argparse.Namespace, binary: Path, run_dir: Path, log) -> d
     log and kept in the run directory (`GENOME_RECORD`); `args.treatments` is
     then the `--with` list for every seat's worker and the mod's keys."""
     if getattr(args, "genome", "live") == "stock":
-        record = {"genome": "stock", "source": "--genome stock", "listed": 0,
+        record = {"genome": "stock", "source": "--genome stock", "listed": 0, "hotseat": [],
                   "with": [], "forced": [], "dropped": [], "note": ""}
     else:
         wanted, source = live_treatments()
-        record = {"genome": "live", "source": source, "listed": len(wanted),
+        # The hotseat-only genes, after the ladder's, each once.
+        extra = [tag for tag in hotseat_treatments() if tag not in wanted]
+        if extra:
+            wanted = wanted + extra
+            source = f"{source} + deploy/hotseat-force-on.txt ({len(extra)})"
+        record = {"genome": "live", "source": source, "listed": len(wanted), "hotseat": extra,
                   **armed_treatments(binary, wanted, run_dir)}
     args.treatments = record["with"]
-    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "forced",
-                                                       "dropped", "note")}
+    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "hotseat",
+                                                       "forced", "dropped", "note")}
     (run_dir / GENOME_RECORD).write_text(json.dumps(record, indent=2))
     if record["genome"] == "stock":
         log("decider genome: stock (--genome stock): the deployment genome with no live genes "
@@ -702,8 +722,8 @@ def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
                   "with": [], "forced": [], "dropped": [], "note": ""}
     args.genome = record.get("genome") or "stock"
     args.treatments = list(record.get("with") or [])
-    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "forced",
-                                                           "dropped", "note")}
+    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "hotseat",
+                                                           "forced", "dropped", "note")}
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
@@ -1958,7 +1978,8 @@ RELAY_S = 0.02
 
 def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
               clock=None, sleep=None) -> None:
-    """Relay the game's log to the workers every `read_s` for `seconds`.
+    """Relay the game's log to the workers every `read_s` for `seconds`
+    (`watch.relay_for`, #6003).
 
     A decider reads its board from its seat's events.jsonl (`civvis_orders
     --mirror`), which only these bridges write. Relayed once per half-second
@@ -1969,14 +1990,10 @@ def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
     median (two passes), where the decider answers in 10 ms. The ladder relays
     every 50 ms between its passes for the same reason (`civ6_play.py`,
     `read_s`). Only the relay runs this often; everything else keeps the pass.
-    (The same loop as `watch.relay_for` in #6003, which this can call once
-    that is merged.)"""
-    clock, sleep = clock or time.monotonic, sleep or time.sleep
-    until = clock() + seconds
-    while (left := until - clock()) > 0:
-        sleep(min(read_s, left))
-        for bridge in bridges:
-            bridge.pump()
+    The clock and the sleep are read when called, not when `watch` was
+    imported, so a caller (and a test) that replaces `time`'s gets its own."""
+    watch.relay_for(bridges, seconds, read_s, clock=clock or time.monotonic,
+                    sleep=sleep or time.sleep)
 
 
 #: `quit_civ`'s clock: the whole attempt, the seconds a question that is up
@@ -2538,7 +2555,24 @@ class Monitor:
                      "as a Hot Seat human")
             return
         self.unseated += missing
+        # A seat this run saw eliminated takes no turn either: no fault of the setup.
+        gone = [seat for seat in missing if seat in self.defeated]
+        if gone:
+            self.say(f"{_rows(gone)}: eliminated, so {'its decision worker is' if len(gone) == 1 else 'their decision workers are'} stopped")
+        missing = [seat for seat in missing if seat not in self.defeated]
+        if not missing:
+            return
         one = len(missing) == 1
+        if turn - 1 > 1:
+            # A game picked up part-way (`--resume`, `--attach`): a seat eliminated
+            # before this run began has no turn and no record of its end here.
+            self.log(f"⚠ {_rows(missing)} took no turn {turn - 1} on the hand-over screen: "
+                     f"eliminated earlier in this game, or not a Hot Seat human (Civ VI's own AI "
+                     f"plays {'it' if one else 'them'}, or the row is closed). CIVVIS does not play "
+                     f"{'it' if one else 'them'}, and {'its decision worker is' if one else 'their decision workers are'} "
+                     "stopped. If a CIVVIS seat should still be playing, quit to the main menu and "
+                     "load the game again with the row set to Human.")
+            return
         self.log(f"⚠ {_rows(missing)} {'is' if one else 'are'} not a Hot Seat human in this game "
                  f"(no turn {turn - 1} on the hand-over screen): Civ VI's own AI plays "
                  f"{'it' if one else 'them'}, or the row is closed, so CIVVIS does not, and "
@@ -3490,6 +3524,10 @@ def run_manual(args: argparse.Namespace) -> int:
         monitor = Monitor(run_dir, args.tag, MANUAL_SEATS, args, log)
         modding = ModdingLog()
         civ_up = bool(civ_at_install)
+        # Whether Civ VI runs, without a `ps` every pass, as `run` asks it
+        # (#6005): the relay reads nothing while one runs. A new or a closed
+        # game is still confirmed by a real listing (`watch.GameLiveness`).
+        liveness = watch.GameLiveness(clock=time.monotonic)
         loaded_at: float | None = None
         late_said = False
         while True:
@@ -3562,7 +3600,7 @@ def run_manual(args: argparse.Namespace) -> int:
                      "lobby": lobby, **manual_table_record(monitor, args, civvis, lobby, began)},
                     indent=2))
                 record_person_game(run_dir, log)
-            pids = set(env.game_pids())
+            pids = set(liveness.known) if liveness.alive() else set()
             if pids and not civ_up:
                 civ_up = True
                 if restart_wanted and pids.isdisjoint(civ_at_install):
@@ -3703,10 +3741,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="no wait bar on the cover (default: a bar and about how long is "
                          "left, from how long your recent waits took)")
     ap.add_argument("--fast-turns", action="store_true",
-                    help="EXPERIMENT, off by default: under the cover every hand-over (the "
-                         "CIVVIS seats' and yours) is pressed on its first frame instead of "
-                         "0.3 s in, and the CIVVIS seats look for their orders every 20 ms "
-                         "instead of 50 ms; not yet checked in a live game")
+                    help="off by default: under the cover every hand-over (the CIVVIS seats' "
+                         "and yours) is pressed on its first frame instead of 0.3 s in. It "
+                         "also has the CIVVIS seats look for their orders every 20 ms, which "
+                         "the default `--genome live` already does (its mod arms' poll-20ms), "
+                         "so that part adds something only with `--genome stock`. Played in "
+                         "live games since 2026-11-28")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")
@@ -3743,9 +3783,10 @@ def main(argv: list[str] | None = None) -> int:
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
     ap.add_argument("--genome", choices=GENOMES, default="live",
                     help="what the CIVVIS seats play: `live` (default) the live ladder's "
-                         "genes (deploy/live-force-on.txt, or this host's override) and mod "
-                         "arms (deploy/live-mod-arms.txt), as far as the decider takes them; "
-                         "`stock` the bare deployment genome, for comparison")
+                         "genes (deploy/live-force-on.txt, or this host's override), the "
+                         "hotseat-only genes on top (deploy/hotseat-force-on.txt) and the "
+                         "ladder's mod arms (deploy/live-mod-arms.txt), as far as the decider "
+                         "takes them; `stock` the bare deployment genome, for comparison")
     ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
                     help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
                          f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "

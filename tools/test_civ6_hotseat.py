@@ -132,6 +132,19 @@ class HotseatInstallTest(unittest.TestCase):
         self.assertEqual(served, ["CivvisControlAutoClose.lua"])
         self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
                          (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        # The leader screen's closer sits above Quick Deals' replacement of the same
+        # context (LoadOrder 99999), in hotseat only.
+        orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                  tree.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertEqual(orders["DiplomacyActionView"], str(install.HOTSEAT_LOAD_ORDER))
+        self.assertGreater(install.HOTSEAT_LOAD_ORDER, 99999)
+        shipped = ET.fromstring((install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        shipped_orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                          shipped.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertIsNone(shipped_orders["DiplomacyActionView"], "a single-player install's is as it was")
+        self.assertEqual({k: orders[k] for k in shipped_orders if k != "DiplomacyActionView"},
+                         {k: v for k, v in shipped_orders.items() if k != "DiplomacyActionView"},
+                         "no other screen's order changes")
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)
@@ -461,6 +474,32 @@ class SeatCheckTest(unittest.TestCase):
             self.turns(run_dir, (2, 1), (3, 0))
             self.poll(monitor)
             self.assertEqual(monitor.take_unseated(), [], "checked once")
+
+    def test_a_seat_gone_from_a_game_picked_up_part_way_is_not_called_a_setup_fault(self) -> None:
+        # A resumed game (#6011's check, live 2026-11-28 review): row 5's seat was
+        # eliminated before this run began, so it takes no turn and nothing here
+        # recorded its end. It is retired as before, in words that fit both cases.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2, 3, 4, 5])
+            self.turns(run_dir, (57, 0), (57, 1), (57, 2), (57, 3), (57, 5), (58, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [4])
+            warned = [line for line in lines if line.startswith("⚠ row 5 took no turn 57")]
+            self.assertEqual(len(warned), 1, lines)
+            self.assertIn("eliminated earlier in this game, or not a Hot Seat human", warned[0])
+            self.assertIn("its decision worker is stopped", warned[0])
+            self.assertFalse([line for line in lines if "is not a Hot Seat human in this game" in line])
+        # One this run saw eliminated: said as such, no warning at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2])
+            monitor.defeated.add(2)
+            self.turns(run_dir, (1, 0), (1, 1), (2, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [2])
+            self.assertIn("row 3: eliminated, so its decision worker is stopped", lines)
+            self.assertFalse([line for line in lines if line.startswith("⚠")], lines)
 
     def test_every_seat_taking_its_turn_is_said_once_and_a_late_start_waits_for_a_whole_round(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -862,6 +901,7 @@ class LiveGenomeTest(unittest.TestCase):
             with patch.object(hotseat, "live_treatments",
                               return_value=(["age-closer-2", "recon-replacement", "no-such-tag"],
                                             "deploy/live-force-on.txt")), \
+                    patch.object(hotseat, "hotseat_treatments", return_value=[]), \
                     patch.object(hotseat.subprocess, "run", side_effect=run):
                 hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
             self.assertEqual(args.treatments, ["age-closer-2", "recon-replacement"])
@@ -889,6 +929,58 @@ class LiveGenomeTest(unittest.TestCase):
             asked.assert_not_called()
             self.assertEqual(stock.treatments, [])
             self.assertIn("decider genome: stock", lines[0])
+
+    def test_the_hotseat_only_genes_go_on_top_of_the_ladders(self) -> None:
+        # The gameplay lanes' genes for a person's game (findings/for-launcher.md,
+        # 2026-11-28): before, `CIVVIS_WITH` was the only way, and it replaces the
+        # ladder's whole list.
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp) / "hotseat-force-on.txt"
+            listed.write_text("# a note\nmonument-first  # the ladder has it already\n\n"
+                              "gold-buys-the-opening-builder\ngold-buys-the-opening-builder\n"
+                              "science-seat-writes-first,taken-settler-is-retaken\n")
+            self.assertEqual(hotseat.hotseat_treatments(listed),
+                             ["monument-first", "gold-buys-the-opening-builder", "science-seat-writes-first",
+                              "taken-settler-is-retaken"])
+            self.assertEqual(hotseat.hotseat_treatments(Path(tmp) / "none.txt"), [])
+            run_dir, lines, asked = Path(tmp), [], []
+
+            def run(command, **_):
+                asked.append([word for word in command[3:] if word != "--with"])
+                return argparse.Namespace(returncode=0, stderr="", stdout="")
+            args = game_args(genome="live")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed), \
+                    patch.object(hotseat, "live_treatments",
+                                 return_value=(["recon-replacement", "monument-first"],
+                                               "deploy/live-force-on.txt")), \
+                    patch.object(hotseat.subprocess, "run", side_effect=run):
+                record = hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(args.treatments, ["recon-replacement", "monument-first",
+                                               "gold-buys-the-opening-builder", "science-seat-writes-first",
+                                               "taken-settler-is-retaken"], "after the ladder's, each once")
+            self.assertEqual(record["hotseat"], ["gold-buys-the-opening-builder", "science-seat-writes-first",
+                                                 "taken-settler-is-retaken"])
+            self.assertEqual(record["source"], "deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3)")
+            self.assertIn("from deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3): 5 of 5 listed", lines[0])
+            self.assertEqual(args.genome_record["hotseat"], record["hotseat"], "on the game's record")
+            self.assertEqual(json.loads((run_dir / hotseat.GENOME_RECORD).read_text())["hotseat"], record["hotseat"])
+            # `--genome stock` plays none of it.
+            stock = game_args(genome="stock")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed):
+                hotseat.live_genome(stock, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(stock.treatments, [])
+
+    def test_the_shipped_hotseat_list_names_genes_the_decider_registers(self) -> None:
+        # A tag the decider does not know is dropped at the start of a game; a tag
+        # the ladder already arms is no addition; one family is armed in one version.
+        tags = hotseat.hotseat_treatments()
+        self.assertTrue(tags, hotseat.HOTSEAT_FORCE_FILE)
+        genes = (hotseat.HERE.parent / "src" / "ai" / "advanced" / "genes.rs").read_text(encoding="utf-8")
+        registered = set(re.findall(r'Gene \{ tag: "([^"]+)"', genes))
+        self.assertEqual([tag for tag in tags if tag not in registered], [], "every tag is a registered gene")
+        ladder = hotseat.force_tags(hotseat.LIVE_FORCE_FILE.read_text(encoding="utf-8"))
+        self.assertEqual([tag for tag in tags if tag in ladder], [], "none the ladder's list already arms")
+        self.assertFalse({"founding-voyage", "founding-voyage-2"} <= set(tags), "one founding-voyage only")
 
     def test_live_is_the_default_and_stock_is_asked_for(self) -> None:
         for flags, want in (([], "live"), (["--genome", "stock"], "stock")):
@@ -1798,6 +1890,24 @@ class CoverTest(unittest.TestCase):
         source = Path(hotseat.__file__).read_text()
         attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
         self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
+
+    def test_the_help_says_what_fast_turns_adds_to_the_live_genome(self) -> None:
+        # The 20 ms orders peek is already the default game's: the live mod arms'
+        # `poll-20ms` (`deploy/live-mod-arms.txt`) sets `OrdersPeekSeconds`, which the
+        # mod reads before `HotseatFastTurns` (CivvisControlHeartbeat.lua `peekEvery`,
+        # CivvisControlAgent.lua `CivvisQueue.peekSeconds`).
+        live = hotseat.hotseat_config(game_args(genome="live", treatments=[]), Path("/tmp/r"),
+                                      Path("/tmp/r/o.sqlite"))
+        stock = hotseat.hotseat_config(game_args(genome="stock", treatments=[]), Path("/tmp/r"),
+                                       Path("/tmp/r/o.sqlite"))
+        self.assertEqual((live["OrdersPeekSeconds"], live["HotseatFastTurns"]), (0.02, False))
+        self.assertIsNone(stock["OrdersPeekSeconds"])
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit):
+            hotseat.main(["--help"])
+        said = " ".join(out.getvalue().split())
+        self.assertIn("which the default `--genome live` already does", said)
+        self.assertIn("adds something only with `--genome stock`", said)
+        self.assertNotIn("not yet checked in a live game", said)
 
     def test_the_cover_is_quiet_and_says_how_long_by_default(self) -> None:
         cases = {

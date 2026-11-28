@@ -9348,6 +9348,20 @@ local function exportState(player, pid, turn, frame, eventKind)
 				-- (`CivvisRivalWars`): an ally already at war with our enemy
 				-- is the Military Alliance's +5.
 				at_war_with = CivvisRivalWars(pid, otherId),
+				-- Hotseat only: whether a person plays this rival. The harness
+				-- lists the person's seat in `HotseatHumanSeats`; a person can
+				-- declare war and take a civilian on one turn, so the decider's
+				-- opt-in `person-units-threaten-civilians` reads their soldiers as
+				-- able to take ours whatever the war state. nil on every other
+				-- install and for every rival a CIVVIS seat plays, so a
+				-- single-player or ladder board is byte for byte as before.
+				person = (function()
+					if cfg.Hotseat ~= true then return nil; end
+					for _, seat in ipairs(cfg.HotseatHumanSeats or {}) do
+						if tonumber(seat) == otherId then return true; end
+					end
+					return nil;
+				end)(),
 				-- Whether this rival currently grants OUR seat Open Borders —
 				-- the shipped overview's "received" direction
 				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
@@ -11232,6 +11246,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 		units = units,
 		trade_routes = tradeRoutes,
 		rivals = rivals,
+		-- Hotseat only: the deals other seats have put to us and ours to
+		-- them (`CivvisTrade.seatBoard`); nil, so absent, everywhere else.
+		deals = try(function() return CivvisTrade.seatBoard(player, pid, turn); end, nil),
 		minors = minors,
 		-- ★★★★★ THE ENVOYS WE ARE HOLDING BUT NEVER SPEND.
 		--
@@ -12898,7 +12915,7 @@ end;
 -- counts this turn's only). The release behind a session (#5309) stays the
 -- fallback for the popups no order of ours raises.
 CivvisTrade.SESSION_ORDER_KINDS = { peace = true, friendship = true, alliance = true,
-	sell = true, buy = true };
+	sell = true, buy = true, deal = true };
 CivvisTrade.concertWaits = function(turn)
 	return try(function() return CivvisTrade.holdsEndTurn(turn); end, false) == true;
 end;
@@ -13398,6 +13415,12 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	end, nil);
 	if statementType ~= "MAKE_DEAL" then return; end
 	if session.sessionID == nil then session.sessionID = sessionID; end
+	-- A hotseat `deal` order's session (`CivvisTrade.seatOrder`): sent
+	-- and closed on our own opening; no seat answers inside it.
+	if session.kind == "hotseat" then
+		if not session.sent then CivvisTrade.seatSend(pid, other, session, sessionID, turn); end
+		return;
+	end
 	if not session.sent then
 		if CivvisTrade.cashBidLapsed(pid, other) then return; end
 		-- ★★★ A PEACE OR ALLIANCE SESSION THAT OPENS AFTER THE END TURN IS
@@ -13713,6 +13736,569 @@ CivvisTrade.luxuryQuote = function(pending, worth)
 		and string.find(pending.want, "^RESOURCES:") ~= nil
 		and pending.strategic == nil and pending.cash_bid_requested ~= true
 		and pending.cash_offer_bid == nil and worth == 0;
+end;
+
+-- ★★★★ HOTSEAT DEALS: WHAT THE OTHER SEATS HAVE PUT ON THE TABLE (deals v1;
+-- the contract is ~/civvis-civ6-runs/hotseat/findings/trade-deals-design.md).
+-- In a hotseat game every major is a human seat, so no deal AI ever answers
+-- (an EQUALIZE ask of a human seat expired unanswered, selfplay-duel-
+-- 20261127T0654Z-p0 t54->t60), and a deal one seat PROPOSES to another stays
+-- pending until somebody acts on it: the shipped screen never auto-evaluates a
+-- human's side (`IsAutoPropose` is false for one, DLC/Expansion2/UI/
+-- Replacements/DiplomacyDealView.lua:976-990), Propose sends `PROPOSED`
+-- (:156), and leaving closes the session but not the deal (`OnResumeGame`,
+-- :657-665). Live 2026-11-28 the person proposed to seat 4 at t12 and
+-- cancelled it, still unanswered, at t27 (net_message_debug.log `DiplomacyDeal:
+-- eActionType=8, eFromPlayer=0, eToPlayer=4`; CLOSED goes out only for a
+-- pending deal to a human, :630-633) -- then declared war on seat 4. Nothing of
+-- ours ever looked. This reads, on the seat's own turn and changing nothing:
+--   * every other seat's pending deal to us (`DealManager.HasPendingDeal(them,
+--     us)`), with its items read from our INCOMING working deal (what the
+--     shipped screen shows the recipient, `MakeDeal_TestValid`, Base/Assets/UI/
+--     DiplomacyActionView.lua:2612-2623) or, when that is empty, from their
+--     OUTGOING one, and the record says which (`source`);
+--   * our own pending deal to each seat, and what became of it once it is no
+--     longer pending (`deal_outcome`): the answer itself arrives on THEIR turn
+--     as `Events.DiplomacyIncomingDeal` (the shipped screen's own listener,
+--     DiplomacyDealView.lua:2805-2820), which `seatHeard` writes down for us;
+--   * `deal_probe`: how this build presents a pending deal to its recipient,
+--     which no shipped script says (the DIPLOMACY_SESSION notification's
+--     activation "is handled by the C++ side", Base/Assets/UI/Panels/
+--     NotificationPanel.lua:1403-1405). The next live check reads it.
+-- The board carries it as `deals` for the decider. Hotseat only: every other
+-- install's board and ledger are byte for byte as before. Fields of
+-- CivvisTrade: the main chunk is at its local ceiling.
+CivvisTrade.seat = { v = 1, seen = {}, mine = {}, outcomes = {}, heard = {},
+	refused = {}, counter = {}, proposed = {}, probed = nil };
+-- Who plays `other`: a CIVVIS seat (`HotseatSeats`), a Firaxis AI, or else the
+-- person (their seat, or the test stand-in that plays it).
+CivvisTrade.seatKind = function(other)
+	for _, seat in ipairs(cfg.HotseatSeats or {}) do
+		if tonumber(seat) == other then return "civvis"; end
+	end
+	if try(function() return Players[other]:IsHuman(); end, nil) == false then return "ai"; end
+	return "person";
+end;
+-- One deal item as the board carries it, read the way the shipped screen
+-- reads it (DiplomacyDealView.lua `PopulateDealResources` :2244-2290: type,
+-- from-player, duration 0 = one time, `GetAmount`, a resource's `GetValueType`
+-- index; agreements by `GetSubType`; a Great Work as the sell arm builds it,
+-- SubType = its GreatWorks row, ValueType = the instance).
+CivvisTrade.seatItem = function(item)
+	local kind = try(function() return item:GetType(); end, nil);
+	local amount = try(function() return item:GetAmount(); end, nil);
+	local duration = try(function() return item:GetDuration(); end, nil) or 0;
+	local value = try(function() return item:GetValueType(); end, nil);
+	local sub = try(function() return item:GetSubType(); end, nil);
+	if kind == DealItemTypes.GOLD then
+		return { type = "GOLD", amount = amount, duration = duration };
+	elseif kind == DealItemTypes.RESOURCES then
+		local row = try(function() return GameInfo.Resources[value]; end, nil);
+		local class = row ~= nil and row.ResourceClassType or nil;
+		return { type = "RESOURCE", name = row ~= nil and row.ResourceType or tostring(value),
+			amount = amount, duration = duration,
+			class = class == "RESOURCECLASS_LUXURY" and "luxury"
+				or class == "RESOURCECLASS_STRATEGIC" and "strategic"
+				or class == "RESOURCECLASS_BONUS" and "bonus" or nil };
+	elseif DealItemTypes.FAVOR ~= nil and kind == DealItemTypes.FAVOR then
+		return { type = "FAVOR", amount = amount };
+	elseif kind == DealItemTypes.AGREEMENTS then
+		local out = { type = "AGREEMENT", duration = duration };
+		for name, v in pairs(DealAgreementTypes or {}) do
+			if v == sub then out.name = name; end
+		end
+		out.name = out.name or tostring(sub);
+		if out.name == "JOINT_WAR" or out.name == "THIRD_PARTY_WAR" then out.target = value; end
+		return out;
+	elseif kind == DealItemTypes.GREATWORK then
+		local row = sub ~= nil and try(function() return GameInfo.GreatWorks[sub]; end, nil) or nil;
+		return { type = "GREATWORK", instance = value, name = row ~= nil and row.GreatWorkType or nil,
+			object = row ~= nil and row.GreatWorkObjectType or nil };
+	elseif DealItemTypes.CITIES ~= nil and kind == DealItemTypes.CITIES then
+		return { type = "CITY", city = value };
+	elseif DealItemTypes.CAPTIVE ~= nil and kind == DealItemTypes.CAPTIVE then
+		return { type = "CAPTIVE", unit = value };
+	end
+	return { type = "OTHER", raw = tostring(kind) };
+end;
+-- A deal's two sides from `pid`'s chair, and its id: a 31-bit hash of the
+-- sorted item keys, so the same items in any order are the same deal and
+-- every change of an amount or a duration is a new one. (Kept under 2^31 so
+-- Lua's doubles hold every step exactly.)
+CivvisTrade.seatSides = function(deal, pid)
+	local give, get, keys = {}, {}, {};
+	for item in deal:Items() do
+		local entry = CivvisTrade.seatItem(item);
+		local ours = try(function() return item:GetFromPlayerID(); end, nil) == pid;
+		local list = ours and give or get;
+		list[#list + 1] = entry;
+		keys[#keys + 1] = table.concat({ ours and "give" or "get", entry.type,
+			tostring(entry.name or ""), tostring(entry.amount or ""), tostring(entry.duration or ""),
+			tostring(entry.instance or entry.city or entry.unit or entry.target or entry.raw or "") }, "|");
+	end
+	table.sort(keys);
+	local text, h = table.concat(keys, ";"), 7;
+	for i = 1, #text do h = (h * 31 + string.byte(text, i)) % 2147483647; end
+	return give, get, h, #keys;
+end;
+-- The answer to OUR proposal, heard on the other seat's turn. Record only:
+-- nothing is sent, nothing else is read. Registered ungated in hotseat
+-- (Initialize), so it keeps a note for this seat alone.
+CivvisTrade.seatHeard = function(fromPlayer, toPlayer, action)
+	CivvisK.guard(function()
+		if cfg.Hotseat ~= true or CivvisSeat.seat == nil or toPlayer ~= CivvisSeat.seat then return; end
+		if cfg.RequireHarness == true and not CivvisHarness.live() then return; end
+		local name = tostring(action);
+		for key, v in pairs(DealProposalAction or {}) do
+			if v == action then name = key; end
+		end
+		CivvisTrade.seat.heard[fromPlayer] = { action = name,
+			turn = try(function() return Game.GetCurrentGameTurn(); end, -1) };
+	end);
+end;
+CivvisTrade.SEAT_OUTCOME = { ACCEPTED = "accepted", REJECTED = "rejected",
+	REJECTED_PERMANENT = "rejected", ADJUSTED = "countered", CLOSED = "closed" };
+-- Their pending deal to us, as the board and the `deal` order both read it:
+-- (pending, deal, items on our INCOMING working deal, which deal was read).
+CivvisTrade.seatTheirs = function(pid, other)
+	local theirs = try(function() return DealManager.HasPendingDeal(other, pid); end, nil);
+	local incoming = try(function()
+		return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, other);
+	end, nil);
+	local inCount = incoming ~= nil and try(function() return incoming:GetItemCount(); end, 0) or 0;
+	local deal, source = incoming, "incoming";
+	if theirs == true and (inCount or 0) == 0 then
+		deal = try(function() return DealManager.GetWorkingDeal(DealDirection.OUTGOING, other, pid); end, nil);
+		source = "their_outgoing";
+	end
+	return theirs, deal, inCount or 0, source;
+end;
+-- What the decider prices a deal against, hotseat only: free Great Work
+-- slots by object class (`CivvisGreatWorks.survey`'s empty slots and what
+-- each accepts) and each strategic's stockpile cap, read as the shipped top
+-- panel reads it (DLC/Expansion2/UI/Replacements/TopPanel_Expansion2.lua:48,
+-- `pPlayerResources:GetResourceStockpileCap(resource.ResourceType)`).
+CivvisTrade.seatRoom = function(player, turn, board)
+	local survey = try(function() return CivvisGreatWorks.survey(player, turn); end, nil);
+	if survey ~= nil then
+		local room = {};
+		for _, slot in ipairs(survey.slots or {}) do
+			for object in pairs(slot.accepts or {}) do room[object] = (room[object] or 0) + 1; end
+		end
+		board.great_work_room = room;
+	end
+	local resources = try(function() return player:GetResources(); end, nil);
+	if resources ~= nil then
+		local caps = {};
+		CivvisK.guard(function()
+			for row in GameInfo.Resources() do
+				if row.ResourceClassType == "RESOURCECLASS_STRATEGIC" then
+					caps[row.ResourceType] = try(function()
+						return resources:GetResourceStockpileCap(row.ResourceType);
+					end, nil);
+				end
+			end
+		end);
+		board.strategic_caps = caps;
+	end
+end;
+-- The `deals` board (nil outside hotseat), with its records once per turn.
+CivvisTrade.seatBoard = function(player, pid, turn)
+	if cfg.Hotseat ~= true or CivvisSeat.seat == nil then return nil; end
+	local seat = CivvisTrade.seat;
+	local firstLook = seat.probed ~= turn;
+	seat.probed = turn;
+	local board = { v = 1, incoming = {}, outgoing = {}, outcomes = seat.outcomes,
+		refused_by_person = {}, counterparts = {} };
+	local probe = { turn = turn, seats = {} };
+	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, nil) or {}) do
+		if other ~= pid and diplomacy ~= nil
+				and try(function() return diplomacy:HasMet(other); end, false) == true then
+			local kind = CivvisTrade.seatKind(other);
+			board.counterparts[#board.counterparts + 1] = { player = other, kind = kind };
+			-- Ours to them first: a counter to our proposal resolves it, and
+			-- the incoming deal read below is then that counter.
+			local ours = try(function() return DealManager.HasPendingDeal(pid, other); end, nil);
+			local theirs, deal, inCount, source = CivvisTrade.seatTheirs(pid, other);
+			local mine = seat.mine[other];
+			if ours == true then
+				local out = try(function()
+					return DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, other);
+				end, nil);
+				local give, get, id, count = {}, {}, nil, 0;
+				if out ~= nil then give, get, id, count = CivvisTrade.seatSides(out, pid); end
+				if mine == nil then
+					mine = { id = id, first = turn, give = give, get = get, round = 1 };
+					seat.mine[other] = mine;
+					seat.heard[other] = nil;
+				end
+				board.outgoing[#board.outgoing + 1] = { to = other, to_kind = kind, id = mine.id,
+					proposed_turn = mine.first, pending_turns = turn - mine.first,
+					give = give, get = get, items = count, round = mine.round };
+			elseif ours == false and mine ~= nil then
+				seat.mine[other] = nil;
+				local heard = seat.heard[other];
+				seat.heard[other] = nil;
+				local outcome = heard ~= nil and CivvisTrade.SEAT_OUTCOME[heard.action] or nil;
+				if outcome == nil and theirs == true then outcome = "countered"; end
+				local entry = { with = other, kind = kind, id = mine.id, proposed_turn = mine.first,
+					turn = turn, outcome = outcome or "closed", round = mine.round,
+					heard = heard ~= nil and heard.action or nil, give = mine.give, get = mine.get };
+				table.insert(seat.outcomes, entry);
+				while #seat.outcomes > 8 do table.remove(seat.outcomes, 1); end
+				if entry.outcome == "countered" then
+					seat.counter[other] = { of = mine.id, round = (mine.round or 1) + 1 };
+				end
+				if kind == "person" and entry.outcome ~= "accepted" and entry.outcome ~= "countered"
+						and mine.id ~= nil then
+					seat.refused[mine.id] = { turn = turn, give = mine.give, get = mine.get };
+				end
+				local record = { turn = turn };
+				for key, value in pairs(entry) do record[key] = value; end
+				emit("deal_outcome", record);
+			end
+			-- Theirs to us.
+			local seen = seat.seen[other];
+			if theirs == true and deal ~= nil then
+				local give, get, id, count = CivvisTrade.seatSides(deal, pid);
+				if count > 0 then
+					if seen == nil or seen.id ~= id then
+						local counter = seat.counter[other];
+						seat.counter[other] = nil;
+						seen = { id = id, first = turn, counter_of = counter ~= nil and counter.of or nil,
+							round = counter ~= nil and counter.round or 1 };
+						seat.seen[other] = seen;
+						emit("deal_incoming", { turn = turn, from = other, from_kind = kind, id = id,
+							give = give, get = get, source = source, counter_of = seen.counter_of,
+							round = seen.round });
+					end
+					board.incoming[#board.incoming + 1] = { from = other, from_kind = kind, id = id,
+						first_seen_turn = seen.first, pending_turns = turn - seen.first,
+						gift = #give == 0, source = source, give = give, get = get,
+						counter_of = seen.counter_of, round = seen.round };
+				end
+			elseif seen ~= nil then
+				seat.seen[other] = nil;
+			end
+			probe.seats[#probe.seats + 1] = { player = other, kind = kind,
+				pending_from_them = theirs, incoming_items = inCount, pending_from_us = ours,
+				open_session = try(function() return DiplomacyManager.FindOpenSessionID(pid, other); end, nil) };
+		end
+	end
+	for id, refused in pairs(seat.refused) do
+		board.refused_by_person[#board.refused_by_person + 1] = { id = id, turn = refused.turn,
+			give = refused.give, get = refused.get };
+	end
+	CivvisK.guard(function() CivvisTrade.seatRoom(player, turn, board); end);
+	if firstLook then
+		probe.queued_session = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil);
+		-- Iterated as the shipped scenario panels iterate it
+		-- (DLC/CivRoyaleScenario/UI/Replacements/NotificationPanel_CivRoyaleScenario.lua:33-36,
+		-- `NotificationManager.GetList(playerID)` then `Find` by id), and the one
+		-- type asked directly (`FindType`, Base/Assets/UI/ActionPanel.lua:454).
+		if NotificationTypes ~= nil then
+			probe.diplomacy_session = try(function()
+				return NotificationManager.FindType(NotificationTypes.DIPLOMACY_SESSION, pid) ~= nil;
+			end, nil);
+		end
+		local diplo, total = {}, 0;
+		CivvisK.guard(function()
+			for _, id in pairs(NotificationManager.GetList(pid) or {}) do
+				total = total + 1;
+				local name = try(function() return NotificationManager.Find(pid, id):GetTypeName(); end, nil);
+				if type(name) == "string" and string.find(name, "DIPLO", 1, true) ~= nil then
+					diplo[#diplo + 1] = name;
+				end
+			end
+		end);
+		probe.notifications, probe.diplomacy_notifications = total, diplo;
+		emit("deal_probe", probe);
+	end
+	return board;
+end;
+
+-- ★★★★ HOTSEAT DEALS: THE `deal` ORDER (deals v1). The decider answers a
+-- pending deal another seat put to us, or puts one of its own, on this seat's
+-- turn; a seat never acts for any other (every send below is `pid`'s, the
+-- local seat's, as every shipped send is `g_LocalPlayer`'s). Each act is the
+-- shipped deal screen's own, made inside a MAKE_DEAL session the way the
+-- screen makes it (DiplomacyActionView.lua:452-457 `CHOICE_MAKE_DEAL` opens
+-- one with `RequestSession(local, other, "MAKE_DEAL")`), and the session is
+-- closed once it is sent, as the screen closes it toward a human:
+--   ACCEPT   copy their deal to ours and, when the two are equal, ACCEPTED
+--            (DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua:2811,
+--            :539-545 `AreWorkingDealsEqual` then `SendWorkingDeal(ACCEPTED)`);
+--   REJECT   REJECTED, then close (:635-641, "Refusing the deal with the
+--            other player");
+--   COUNTER  our terms in place of theirs, ADJUSTED (:580-582, "No, send an
+--            adjustment");
+--   PROPOSE  our terms, PROPOSED (:156); the person did exactly this at t12
+--            of 2026-11-28 and the deal stayed pending for fifteen turns;
+--   WITHDRAW CLOSED for our own pending deal (:630-633, "Canceling the deal").
+-- A deal sent with NO session open to a human seat is queued and dropped at
+-- the turn's end: seat 1's EQUALIZE ask to seat 2 at t30 of the same game,
+-- DiplomacyManager.csv "Requesting Session (B)", "Adding To Queue", then
+-- "Game Turn Ended: Close 1 Open Sessions". Hence the session, always.
+-- What the engine then did is not claimed here: `deal_answer` records the
+-- pending flags right after the send, and the next turn's board says.
+-- `verb` = ACTION[;give=ITEMS][;get=ITEMS]; ITEMS = NAME=amount[@turns],
+-- NAME@turns or GREATWORK#instance, comma separated (the `sell` grammar).
+CivvisTrade.SEAT_DONE = { ACCEPT = "deal_accepted", REJECT = "deal_rejected",
+	COUNTER = "deal_countered", PROPOSE = "deal_proposed", WITHDRAW = "deal_withdrawn" };
+CivvisTrade.seatParse = function(verb)
+	local action = string.match(verb or "", "^(%u+)");
+	if action == nil or CivvisTrade.SEAT_DONE[action] == nil then return nil, "deal_verb_unknown"; end
+	local sides = { give = {}, get = {} };
+	for side, list in string.gmatch(verb, ";(%l+)=([^;]*)") do
+		if sides[side] == nil then return nil, "deal_verb_unknown"; end
+		for token in string.gmatch(list, "[^,]+") do
+			local spec;
+			local instance = string.match(token, "^GREATWORK#(%d+)$");
+			if instance ~= nil then
+				spec = { name = "GREATWORK", instance = tonumber(instance) };
+			else
+				local name, rest = string.match(token, "^([%u_]+)(.*)$");
+				local amount = string.match(rest or "", "^=(%d+)");
+				local turns = string.match(rest or "", "@(%d+)$");
+				if name == nil or not string.match(rest, "^=?%d*@?%d*$") then
+					return nil, "deal_item_unknown:" .. token;
+				end
+				spec = { name = name, amount = tonumber(amount), duration = tonumber(turns) };
+			end
+			sides[side][#sides[side] + 1] = spec;
+		end
+	end
+	return action, sides.give, sides.get;
+end;
+-- One item onto `deal`, from `from` to `to`, built as the shipped screen
+-- builds it: gold and favor with the duration set first, "so the max amount
+-- calculation knows what we are doing", then clipped to `GetMaxAmount`
+-- (DiplomacyDealView.lua:870-879 `OnClickAvailableOneTimeGold`, :935-944
+-- multi-turn); a resource by its index, amount and duration, then
+-- `IsValid` (:1336-1342 `OnClickAvailableResource`); Open Borders by subtype
+-- and the duration the possible-items entry carries (:1377-1378,
+-- `PopulateAvailableAgreements` reads `entry.Duration`); a Great Work by its
+-- possible-items entry, SubType = `ForTypeDescriptionID`, ValueType =
+-- instance (:1554-1555 `OnClickAvailableGreatWork`). Returns nil or the
+-- refusal.
+CivvisTrade.seatAdd = function(deal, from, to, spec)
+	local name = spec.name;
+	local function possible(kind)
+		return try(function() return DealManager.GetPossibleDealItems(from, to, kind, deal); end, nil) or {};
+	end
+	local function amountOf(item, want)
+		local cap = try(function() return item:GetMaxAmount(); end, nil);
+		if type(cap) == "number" and cap < want then want = cap; end
+		return math.floor(want);
+	end
+	if name == "GOLD" or (name == "FAVOR" and DealItemTypes.FAVOR ~= nil) then
+		local item = deal:AddItemOfType(name == "GOLD" and DealItemTypes.GOLD or DealItemTypes.FAVOR, from);
+		if item == nil then return "deal_item_refused:" .. name; end
+		item:SetDuration(name == "GOLD" and (spec.duration or 0) or 0);
+		local amount = amountOf(item, spec.amount or 0);
+		if amount <= 0 then
+			pcall(function() deal:RemoveItemByID(item:GetID()); end);
+			return "deal_item_refused:" .. name;
+		end
+		item:SetAmount(amount);
+		return nil;
+	end
+	if string.find(name, "^RESOURCE_") ~= nil then
+		local row = try(function() return GameInfo.Resources[name]; end, nil);
+		if row == nil then return "deal_item_unsupported:" .. name; end
+		local offered = false;
+		for _, entry in ipairs(possible(DealItemTypes.RESOURCES)) do
+			if entry.ForType == row.Index and entry.IsValid ~= false then offered = true; end
+		end
+		if not offered then return "deal_item_refused:" .. name; end
+		local item = deal:AddItemOfType(DealItemTypes.RESOURCES, from);
+		if item == nil then return "deal_item_refused:" .. name; end
+		item:SetValueType(row.Index);
+		item:SetDuration(spec.duration or 0);
+		local amount = amountOf(item, spec.amount or 1);
+		if amount > 0 then item:SetAmount(amount); end
+		if amount <= 0 or try(function() return item:IsValid(); end, true) == false then
+			pcall(function() deal:RemoveItemByID(item:GetID()); end);
+			return "deal_item_refused:" .. name;
+		end
+		return nil;
+	end
+	if name == "OPEN_BORDERS" and DealAgreementTypes ~= nil and DealAgreementTypes.OPEN_BORDERS ~= nil then
+		local entry;
+		for _, e in ipairs(possible(DealItemTypes.AGREEMENTS)) do
+			if e.SubType == DealAgreementTypes.OPEN_BORDERS and e.IsValid ~= false then entry = e; end
+		end
+		if entry == nil then return "deal_item_refused:" .. name; end
+		local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, from);
+		if item == nil then return "deal_item_refused:" .. name; end
+		item:SetSubType(DealAgreementTypes.OPEN_BORDERS);
+		item:SetDuration(entry.Duration or spec.duration or 30);
+		return nil;
+	end
+	if name == "GREATWORK" then
+		local entry;
+		for _, e in ipairs(possible(DealItemTypes.GREATWORK)) do
+			if e.ForType == spec.instance and e.IsValid ~= false then entry = e; end
+		end
+		if entry == nil then return "deal_item_refused:GREATWORK#" .. tostring(spec.instance); end
+		local item = deal:AddItemOfType(DealItemTypes.GREATWORK, from);
+		if item == nil then return "deal_item_refused:GREATWORK"; end
+		item:SetSubType(entry.ForTypeDescriptionID);
+		item:SetValueType(spec.instance);
+		return nil;
+	end
+	return "deal_item_unsupported:" .. tostring(name);
+end;
+-- Our outgoing working deal to `other`, cleared and built from the order's
+-- two sides. Returns the deal and its id, or nil and the refusal (the
+-- working deal is then cleared again: nothing half-built is left behind).
+CivvisTrade.seatBuild = function(pid, other, give, get)
+	local ran, deal, why = pcall(function()
+		DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, other);
+		local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, other);
+		if deal == nil then return nil, "deal_no_working_deal"; end
+		for _, spec in ipairs(give) do
+			local refused = CivvisTrade.seatAdd(deal, pid, other, spec);
+			if refused ~= nil then return nil, refused; end
+		end
+		for _, spec in ipairs(get) do
+			local refused = CivvisTrade.seatAdd(deal, other, pid, spec);
+			if refused ~= nil then return nil, refused; end
+		end
+		deal:Validate();
+		if not deal:IsValid() then return nil, "deal_invalid"; end
+		return deal, nil;
+	end);
+	if not ran then deal, why = nil, "deal_throw"; end
+	if deal == nil then
+		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, other); end);
+		return nil, why;
+	end
+	local _, _, id, count = CivvisTrade.seatSides(deal, pid);
+	if count == 0 then
+		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, other); end);
+		return nil, "deal_empty";
+	end
+	return deal, id;
+end;
+-- The `deal` order arm (`applyOrder`). Checks, builds what is to be sent,
+-- and opens the session; `seatSend` sends from inside it.
+CivvisTrade.seatOrder = function(player, pid, other, verb, x, turn)
+	if cfg.Hotseat ~= true or CivvisSeat.seat == nil then return false, "deal_not_hotseat"; end
+	other = tonumber(other);
+	if other == nil or other < 0 or other == pid then return false, "deal_target_unmapped"; end
+	local kind = CivvisTrade.seatKind(other);
+	if kind == "ai" then return false, "deal_not_human"; end
+	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
+	if diplomacy == nil or try(function() return diplomacy:HasMet(other); end, false) ~= true then
+		return false, "deal_not_met";
+	end
+	if try(function() return diplomacy:IsAtWarWith(other); end, false) == true then
+		return false, "deal_at_war";
+	end
+	local action, give, get = CivvisTrade.seatParse(verb);
+	if action == nil then return false, give; end
+	local trade, seat = CivvisTrade, CivvisTrade.seat;
+	if trade.sessions[other] ~= nil then return false, "deal_session_busy"; end
+	local id, round = nil, 1;
+	if action == "ACCEPT" or action == "REJECT" or action == "COUNTER" then
+		local theirs, deal = CivvisTrade.seatTheirs(pid, other);
+		local count;
+		if theirs == true and deal ~= nil then _, _, id, count = CivvisTrade.seatSides(deal, pid); end
+		if theirs ~= true or (count or 0) == 0 then return false, "deal_none_incoming"; end
+		if x ~= nil and math.floor(x) ~= id then return false, "deal_changed"; end
+		local seen = seat.seen[other];
+		round = (seen ~= nil and seen.id == id and seen.round or 1) + 1;
+	end
+	local mine = try(function() return DealManager.HasPendingDeal(pid, other); end, nil) == true;
+	if action == "WITHDRAW" and not mine then return false, "deal_not_pending"; end
+	if action == "PROPOSE" then
+		if mine then return false, "deal_pending_exists"; end
+		local last = seat.proposed[other];
+		if last ~= nil and turn - last < (tonumber(cfg.DealProposeRetryTurns) or 5) then
+			return false, "deal_cooldown";
+		end
+	end
+	if action == "PROPOSE" or action == "COUNTER" then
+		if #give + #get == 0 then return false, "deal_empty"; end
+		local built, builtId = CivvisTrade.seatBuild(pid, other, give, get);
+		if built == nil then return false, builtId; end
+		if kind == "person" and seat.refused[builtId] ~= nil then
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, other); end);
+			return false, "deal_refused_before";
+		end
+		id = builtId;
+		if action == "PROPOSE" then round = 1; end
+	end
+	local send = ({ ACCEPT = "ACCEPTED", REJECT = "REJECTED", COUNTER = "ADJUSTED",
+		PROPOSE = "PROPOSED", WITHDRAW = "CLOSED" })[action];
+	trade.sessions[other] = { kind = "hotseat", action = send, verb = action, id = id,
+		round = round, give = give, get = get, turn = turn, sent = false,
+		opened_at = try(function() return CivvisClock.now(); end, nil) };
+	pcall(function() LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4); end);
+	local ok = CivvisK.attempt(function() DiplomacyManager.RequestSession(pid, other, "MAKE_DEAL"); end);
+	if not ok then
+		trade.sessions[other] = nil;
+		pcall(function() LuaEvents.CivvisDealSession(other, false, 0); end);
+		return false, "deal_throw";
+	end
+	if action == "PROPOSE" then seat.proposed[other] = turn; end
+	emit("deal_session", { turn = turn, target = other, kind = "hotseat", action = send,
+		verb = action, id = id, phase = "opening" });
+	return true, CivvisTrade.SEAT_DONE[action];
+end;
+-- Inside the session (`CivvisOnDiplomacyStatement`, our own opening
+-- statement): send, record what the engine holds right after, close.
+CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
+	session.sent = true;
+	local sent, why = false, nil;
+	if session.verb == "ACCEPT" then
+		pcall(function() DealManager.CopyIncomingToOutgoingWorkingDeal(pid, other); end);
+		if try(function() return DealManager.AreWorkingDealsEqual(pid, other); end, false) ~= true then
+			why = "deals_not_equal";
+		end
+	end
+	if why == nil then
+		sent = CivvisK.attempt(function()
+			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
+		end) == true;
+		if not sent then why = "send_threw"; end
+	end
+	local theirs = try(function() return DealManager.HasPendingDeal(other, pid); end, nil);
+	local ours = try(function() return DealManager.HasPendingDeal(pid, other); end, nil);
+	local seat = CivvisTrade.seat;
+	if sent and (session.verb == "PROPOSE" or session.verb == "COUNTER") then
+		seat.mine[other] = { id = session.id, first = turn, give = session.give, get = session.get,
+			round = session.round };
+		seat.heard[other] = nil;
+	end
+	emit("deal_answer", { turn = turn, to = other, to_kind = CivvisTrade.seatKind(other),
+		verb = session.verb, action = session.action, id = session.id, round = session.round,
+		session = sessionID or -1, sent = sent, why = why,
+		pending_from_them = theirs, pending_from_us = ours });
+	if sent and CivvisTrade.seatKind(other) == "person" then
+		pcall(CivvisTrade.seatNote, pid, other, session, turn);
+	end
+	CivvisTrade.close(pid, other, sent and "hotseat_sent" or "hotseat_not_sent");
+end;
+-- ★ THE PERSON HEARS WHAT A CIVVIS SEAT DID WITH THEIR DEAL (hotseat). The
+-- answer is sent on the seat's own turn, under the cover, and nothing in the
+-- shipped game tells the person who proposed it (a pending deal to a human
+-- is seen only by opening that leader, DiplomacyDealView.lua:1145/:1172). So
+-- each answer the person is owed goes into `ExposedMembers.CivvisDealNotes`
+-- (UI contexts share it), and CivvisHotseatCover.lua puts it on the cover:
+-- "TouristTrap accepted your deal." The last 8 only, numbered (`n`).
+CivvisTrade.seatNote = function(pid, other, session, turn)
+	local notes = ExposedMembers.CivvisDealNotes;
+	if type(notes) ~= "table" then
+		notes = { n = 0 };
+		ExposedMembers.CivvisDealNotes = notes;
+	end
+	notes.n = (tonumber(notes.n) or 0) + 1;
+	notes[#notes + 1] = { n = notes.n, seat = pid, to = other, verb = session.verb,
+		turn = turn, id = session.id };
+	while #notes > 8 do table.remove(notes, 1); end
 end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
@@ -16221,8 +16807,14 @@ local function applyOrder(player, pid, row, turn)
 	-- Nothing here may claim more than "asked": the close is the handler's,
 	-- and the enacted trade shows in the next export as gold up and the
 	-- stock or favor down.
+	-- Hotseat deals between seats: see `CivvisTrade.seatOrder`.
+	if kind == "deal" then return CivvisTrade.seatOrder(player, pid, subject, verb, x, turn); end
 	if kind == "sell" then
 		if subject < 0 then return false, "sell_target_unmapped"; end
+		-- No deal AI prices for a human seat: in hotseat a sale goes as a `deal`.
+		if cfg.Hotseat == true and CivvisTrade.seatKind(subject) ~= "ai" then
+			return false, "deal_human_seat";
+		end
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
 		if diplomacy == nil then return false, "no_diplomacy"; end
 		if not try(function() return diplomacy:HasMet(subject); end, false) then
@@ -16470,6 +17062,11 @@ local function applyOrder(player, pid, row, turn)
 	-- handler closes at or under the ceiling when their side holds that much
 	-- or more and nothing else.
 	if kind == "buy" then
+		-- No deal AI prices for a human seat: in hotseat a purchase goes as a `deal`.
+		if cfg.Hotseat == true and subject ~= nil and subject >= 0
+				and CivvisTrade.seatKind(subject) ~= "ai" then
+			return false, "deal_human_seat";
+		end
 		-- Explicit component budgets from the AI; y is the maximum lump Gold.
 		local workGptCap = tonumber(string.match(verb, "^GREATWORK_ANY;GPT_CAP=(%d+)$"));
 		local workGoldCap = nil;
@@ -29596,6 +30193,74 @@ end;
 -- per 50 ms shared with the publish-batch path, nothing at all unless a CIVVIS
 -- board is out. A hit ticks with the forced poll, exactly as a batch hit does.
 -- `orders_peek_wake` says how long the controller had gone without a tick.
+--
+-- ★★ HOTSEAT `--fast-turns`: A SEAT WAITING FOR ITS NEXT TICK GETS IT FROM
+-- THIS PULSE, NOT FROM THE NEXT SIXTEENTH PUBLISH BATCH. Two waits in every
+-- CIVVIS seat-turn are for nothing but a tick (hotseat-20261128T045523Z, the
+-- owner's 33 turns, `tools/hotseat_wait.py`): Start Turn pressed -> the
+-- opening board exported, median 78 ms at turns 1-10 and 166 ms at 21-32
+-- (0.87 s a round of five seats), every export in the first tick after the
+-- press; and an answer applied -> the tick that ends the turn or opens the
+-- next frame, which `settleTurn` defers on purpose ("one more tick"): after
+-- an answer that moved nothing it took 156-200 ms (median, 68 closes), one
+-- whole tick period, as `orders_peek_wake.since_tick` reads it (median
+-- 71-112 ms after the board, no tick in between). So, behind `--fast-turns`
+-- (`HotseatFastTurns`), the pulse ticks a seat whose turn is active and
+-- unpaused, at most twice per wait (`PULSE_TICKS`), in exactly two states:
+--   * `open`: the turn is not yet opened (`lastTurnSeen`). The shipped hand-
+--     over unpauses by a message after Start Turn (PlayerChange.lua:54-57,
+--     `SetPause(false)` -> `SetWantsPause` + `Network.BroadcastPlayerInfo()`),
+--     and the shipped unit panel waits for `GameConfiguration.IsPaused()` to
+--     read false before it acts (UnitPanel.lua:2845-2858); so does this.
+--   * `settle`: the frame's answer is applied and nothing it started is in
+--     flight: no queued or watched unit (`pendingCount`), no ranged shot
+--     waiting for its fight (`pendingStrikes`), and no end turn asked yet.
+-- Never while a unit walks or a shot flies: the queue's and the shot's waits
+-- are counted in ticks (the idle probe at 2, the no-op probe at 8, the grace
+-- at 30), and a faster tick would shorten every one of them. Those still
+-- move on the host's own unit events and the publish batches, as before.
+-- Every other install never reaches it. `pulse_tick` says when it ticked.
+CivvisQueue.PULSE_TICKS = 2;
+CivvisQueue.pulseTickDue = function()
+	-- `started`: the seat is claimed and the actions resolved (`ensureStarted`).
+	if not started or cfg.Hotseat ~= true or cfg.HotseatFastTurns ~= true
+			or CivvisBoard.hold.pacing then
+		return false;
+	end
+	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
+	if turn < 0 or try(function() return GameConfiguration.IsPaused(); end, true) ~= false
+			or try(function() return Players[Game.GetLocalPlayer()]:IsTurnActive(); end, false) ~= true then
+		return false;
+	end
+	local why;
+	if turn ~= lastTurnSeen then
+		why = "open";
+	elseif awaiting.turn == turn and awaiting.done and CivvisQueue.pendingCount() == 0
+			and CivvisQueue.endTurnSubmittedTurn ~= turn then
+		for _, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+			if shot.turn == turn then return false; end
+		end
+		why = "settle";
+	else
+		return false;
+	end
+	local frame = why == "open" and 0 or (awaiting.frame or 0);
+	local key = why .. ":" .. tostring(turn) .. ":" .. tostring(frame);
+	local spent = CivvisQueue.pulseSpent;
+	if spent == nil or spent.key ~= key then
+		spent = { key = key, n = 0 };
+		CivvisQueue.pulseSpent = spent;
+	end
+	if spent.n >= CivvisQueue.PULSE_TICKS then return false; end
+	spent.n = spent.n + 1;
+	local now, last = CivvisClock.now(), CivvisQueue.lastTickAt;
+	emit("pulse_tick", {
+		turn = turn, frame = frame, why = why, n = spent.n, ui = CivvisClock.stamp(),
+		since_tick = (type(now) == "number" and type(last) == "number")
+			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
+	});
+	return true;
+end;
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
 	-- Orders the brain wrote for a held turn stay landed until it resumes; the
@@ -29609,6 +30274,7 @@ CivvisQueue.onPeekPulse = function()
 		tick();
 		return;
 	end
+	if CivvisQueue.pulseTickDue() then tick(); return; end
 	if not CivvisQueue.ordersLanded() then return; end
 	-- A turn held to the watch pace: tick quietly until its wait is up.
 	if CivvisBoard.hold.pacing then tick(); return; end
@@ -30665,6 +31331,11 @@ function Initialize()
 	end
 	-- A second listener: an open escape is re-read when our turn begins.
 	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisSeat.gate(CivvisLedger.flushSpyMissions)); end);
+	-- Hotseat deals: the answer to this seat's proposal comes on the other
+	-- seat's turn, so it is heard ungated; `seatHeard` only writes it down.
+	if cfg.Hotseat == true and CivvisSeat.seat ~= nil then
+		pcall(function() Events.DiplomacyIncomingDeal.Add(CivvisTrade.seatHeard); end);
+	end
 	-- Hotseat: the end screen's "Just One More Turn" (`CivvisSeat.oneMoreTurn`).
 	if cfg.Hotseat == true then
 		pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn); end);
