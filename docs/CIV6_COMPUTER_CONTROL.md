@@ -707,6 +707,48 @@ above 0 in that turn's `end_turn_wait`. The same `blocker` and `refusing`
 reported again 30 s later is the next thing to fix, and the record names it.
 Neither record on a stalled turn means the stand-in never got its pulse.
 
+**Its end of turn was being lost to the hand-over's pause** (2026-11-28). In
+`live-6p-20261128T0405Z` (at 698089e4, before the stand-in above) the stub's
+turn 3 stood fourteen minutes with NEXT TURN lit, and Civ VI's own
+`Logs/net_message_debug.log` said why:
+
+    Player 0 set TurnActive 1, TurnActiveCount: 1
+    GameCore SEND: GamePaused: gamePaused=1
+    GameCore SEND: PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    GameCore SEND: GamePaused: gamePaused=0
+    GameCore RECV (0): PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    PlayerTurnComplete ignored due to game paused.
+
+Start Turn releases the seat's own pause at once (`SetWantsPause(false)`,
+PlayerChange.lua:229-230), and the game's pause is lifted by a `GamePaused`
+message a moment later. The stub plays in a frame, so it sent its turn complete
+in between. The engine dropped it, and `UI.HasSentTurnComplete()` kept
+answering true, so neither the agent (`requestEndTurn` returns at that flag) nor
+the seat watch (which left a sent turn to the engine) asked again. The earlier
+wedges fit the same pattern (holds refused at turn begin, every later request a
+no-op), but their net logs are gone. Three changes, all for the stand-in's own
+turn unless said otherwise:
+
+- its seat gate stays shut until `GameConfiguration.IsPaused()` reads false. The
+  shipped unit panel waits the same way after the hand-over closes
+  (UnitPanel.lua:2843-2858);
+- a step that finds the turn still active but reading as sent unreadies it
+  where the game allows (ActionPanel.lua:535-537,
+  `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`), or else sends SHIFT+ENTER's
+  request past that flag (`resent` in `stand_in_stuck`);
+- for every watched seat, the seat watch asks again on a sent turn once it has
+  stood its age limit (30 s for a stub, 180 s for any seat; `how` in
+  `seat_stuck_end_turn`/`seat_quiet_end_turn`). Within the quiet rule alone, a
+  sent turn is still left to the engine.
+
+Every seat-watch report and `stand_in_stuck` carries `game_paused`. A CIVVIS
+seat's gate is unchanged: it asks for its end of turn only once its board is
+answered, well after the game unpauses. ⚠ Tests only. In the first live check,
+a `PlayerTurnComplete ignored due to game paused.` line in
+`~/Library/Application Support/Sid Meier's Civilization VI/Firaxis Games/Sid Meier's Civilization VI/Logs/net_message_debug.log`
+(rewritten at every launch, so read it before Civ VI restarts) means the gate
+did not hold.
+
 ⚠⚠ **Measured 2026-11-27: the first cut killed the game.** It put the cover
 ABOVE the hand-over (the EndGameMenu slot) and kept the hand-over drawn under
 it with an injected `AlwaysVisibleInQueue`. In both live duels tried that way
