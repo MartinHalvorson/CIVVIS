@@ -417,6 +417,10 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
                               if person and not getattr(args, "no_cover", False) else "all"),
         "HotseatCoverTimer": (person and not getattr(args, "no_cover", False)
                               and not getattr(args, "no_cover_timer", False)),
+        # DIAGNOSTIC (`--probe`): the see-through probe's contexts and script
+        # (CivvisHotseatProbe.lua). Only a game a person plays has a screen to
+        # measure.
+        "HotseatProbe": (getattr(args, "probe", None) or None) if person else None,
         # The operator's seat's difficulty, and every jack seat's: hotseat
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
@@ -2367,6 +2371,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-cover-timer", action="store_true",
                     help="no wait bar on the cover (default: a bar and about how long is "
                          "left, from how long your recent waits took)")
+    ap.add_argument("--probe", choices=modinstall.HOTSEAT_PROBES, default=None,
+                    help="DIAGNOSTIC: measure what a see-through wait would stand on "
+                         "(CivvisHotseatProbe.lua). `still` runs a timed list of steps on "
+                         "your turn 1, named on screen, for a driver outside to send input "
+                         "to; `turns` (with --auto-human gated) records the observer every "
+                         "turn and hides the HUD groups on the jack seats' turns")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DIAGNOSTIC (the probe flag, CivvisHotseatProbe.lua): one line at the top of the
+     screen saying which step is on, so every screenshot names itself. Nothing
+     here takes input. -->
+<Context ColorSet="BodyTextCool" Style="FontFlair26" FontStyle="Shadow">
+	<Label ID="Step" Anchor="C,T" Offset="0,90" Style="FontFlair26" FontStyle="Shadow" String=""/>
+</Context>
